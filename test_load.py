@@ -12,7 +12,5 @@ def main():
     cpm2 = CPM2(config)
     print( time.perf_counter() - st )
 
-    
-
 if __name__ == "__main__":
     main()

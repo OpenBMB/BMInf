@@ -16,7 +16,7 @@ class CPM2Configuration(Configuration):
     MEMORY_OVERLAP = True
     OVERLAP_LAYERS = 2
     ENCODER_ONLY = False
-    DEVICES = 0
+    DEVICE = 0
     
     MEMORY_LIMIT = 1024 * 1024 * 1024 * 3.5 # total memory
     

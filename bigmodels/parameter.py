@@ -1,5 +1,4 @@
 from .allocator.base import Allocator
-from .context import Context
 import cupy
 import numpy as np
 import logging
@@ -8,7 +7,7 @@ logger = logging.getLogger(__name__)
 elementwise_copy_scale = cupy._core.create_ufunc('bms_scaled_copy', ('bf->f', 'be->e', 'ef->f'), 'out0 = in0 * in1')
 
 class Parameter:
-    def __init__(self, shape, dtype, device_idx = 0, readonly = True):
+    def __init__(self, shape, dtype):
         self.__shape = shape
         self.__size = 1
         for dim in self.__shape:
@@ -17,13 +16,10 @@ class Parameter:
 
         self.value = None
         self.scale = None
-        self.device = None
 
         self.data = None
         self.data_scale = None
         self.data_dtype = None
-        self.__data_device_idx = device_idx
-        self.readonly = readonly
     
     @property
     def nbytes(self):
@@ -49,9 +45,6 @@ class Parameter:
             return self.value.__array_interface__["data"][0]
         return self.value.data.mem.ptr
 
-    @property
-    def data_device_idx(self):
-        return self.__data_device_idx
     
     @property
     def _prepare_size(self):
@@ -68,38 +61,28 @@ class Parameter:
         self.data = data
         self.data_dtype = np.dtype(dtype)
         self.data_scale = scale
-    
-    def assign_device(self, device_list):
-        if self.__data_device_idx > len(device_list):
-            raise RuntimeError("Device idx %d > len(device_list) %d" % (self.__data_device_idx, len(device_list)))
-        self.device = device_list[self.__data_device_idx]
 
-    def to_device(self, allocator : Allocator, ctx : Context):
-        if self.data is None:
-            raise RuntimeError("Parameter not intialized")
-        
+    def to_device(self, allocator : Allocator, load_stream):
+        addr = allocator.alloc(self.nbytes)
 
-        with self.device:
-            addr = allocator.alloc(self.nbytes)
+        arr = np.frombuffer(self.data, self.data_dtype)
+        self.value = cupy.ndarray(self.shape, dtype=self.__dtype, memptr=addr, order='C')
 
-            arr = np.frombuffer(self.data, self.data_dtype)
-            self.value = cupy.ndarray(self.shape, dtype=self.__dtype, memptr=addr, order='C')
+        if self.__dtype != self.data_dtype:
+            if not np.issubdtype(self.__dtype, np.floating): # convert * to floating
+                raise AssertionError("Converting dtype from float to int8")
 
-            if self.__dtype != self.data_dtype:
-                if not np.issubdtype(self.__dtype, np.floating): # convert * to floating
-                    raise AssertionError("Converting dtype from float to int8")
+            self.scale = self.__dtype(1) # scale
 
-                self.scale = 1 # scale
+            allocator.temp_ptr.copy_from_host_async( arr.ctypes.data, arr.nbytes, load_stream)
+            
+            arr = cupy.ndarray( self.shape, dtype=self.data_dtype, memptr=allocator.temp_ptr, order='C' )   # temp var for arr on gpu
+            with load_stream:
+                elementwise_copy_scale(arr, self.__dtype.type(self.data_scale),  self.value)
 
-                allocator.temp_ptr.copy_from_host_async( arr.ctypes.data, arr.nbytes, ctx.load_stream)
-                
-                arr = cupy.ndarray( self.shape, dtype=self.data_dtype, memptr=allocator.temp_ptr, order='C' )   # temp var for arr on gpu
-                with ctx.load_stream:
-                    elementwise_copy_scale(arr, self.__dtype.type(self.data_scale),  self.value)
-
-            else:
-                self.scale = self.data_scale
-                self.value.data.copy_from_host_async( arr.ctypes.data, arr.nbytes, ctx.load_stream )
+        else:
+            self.scale = self.__dtype(self.data_scale)
+            self.value.data.copy_from_host_async( arr.ctypes.data, arr.nbytes, load_stream )
     
     def _remove_data(self):
         self.data = None

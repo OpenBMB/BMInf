@@ -1,5 +1,4 @@
 import cupy
-from bigmodels.parameter import Parameter
 from .base import Model
 from ..layers.transformer_block import TransformerBlock
 from ..layers.encoder_kv import EncoderKeyValueProjection
@@ -9,8 +8,8 @@ from ..layers.layer_norm import LayerNorm
 from ..layers.lm_head import LMHead
 from ..layers.layer_list import LayerList
 from ..configuration import CPM2Configuration
-from ..allocator import AllocatorConfig, ReusedAllocator, SizeLimitedAllocator
-from ..context import Context
+from ..allocator import ReusedAllocator, SizeLimitedAllocator
+import numpy as np
 import logging
 
 logger = logging.getLogger(__name__)
@@ -32,14 +31,14 @@ class CPM2(Model):
         self.overlap_layers = config.OVERLAP_LAYERS
         self.encoder_only = config.ENCODER_ONLY
 
-        self.input_embedding = Embedding(config.VOCAB_SIZE, config.DIM_MODEL, ltype=ltype)
+        self.input_embedding = Embedding(config.VOCAB_SIZE, config.DIM_MODEL, ltype=Embedding.TYPE_F32)
 
         self.encoder_position_bias = PositionBias(config.NUM_POSITION_BUCKETS, config.NUM_HEADS, PositionBias.TYPE_F32)
         self.encoder = LayerList([
             TransformerBlock(False, config.DIM_MODEL, config.DIM_FF, config.DIM_KV, config.NUM_HEADS, ltype)
                 for _ in range(config.NUM_ENCODER_LAYERS)
         ])
-        self.encoder_final_layer_nrom = LayerNorm(config.DIM_MODEL, ltype=LayerNorm.TYPE_F32)
+        self.encoder_final_layer_nrom = LayerNorm(config.DIM_MODEL)
 
         if not self.encoder_only:
             self.decoder_position_bias = PositionBias(config.NUM_POSITION_BUCKETS, config.NUM_HEADS, PositionBias.TYPE_F32)
@@ -50,74 +49,60 @@ class CPM2(Model):
                 TransformerBlock(True, config.DIM_MODEL, config.DIM_FF, config.DIM_KV, config.NUM_HEADS, ltype)
                     for _ in range(config.NUM_DECODER_LAYERS)
             ])
-            self.decoder_final_layer_nrom = LayerNorm(config.DIM_MODEL, ltype=LayerNorm.TYPE_F32)
+            self.decoder_final_layer_nrom = LayerNorm(config.DIM_MODEL)
 
         # init parameter
-        if not isinstance(config.DEVICES, list):
-            devices_ids = [ config.DEVICES ]
-        else:
-            devices_ids = config.DEVICES
+        self.device = cupy.cuda.Device(config.DEVICE)
 
-        assert len(devices_ids) == 1 # multi device not supported
+        with self.device:
+            logger.info("Start loading parameters from disk to cpu")
+            self.load( open(config.MODEL_PATH, "rb") )
 
-        devices = [ cupy.cuda.Device(idx) for idx in devices_ids ]
-
-        logger.info("Start assign devices")
-        self.assign_device([ cupy.cuda.Device(device_id) for device_id in devices ])
-        
-        logger.info("Start loading parameters from disk to cpu")
-        self.load( open(config.MODEL_PATH, "rb") )
-
-        logger.info("Start loading parameters from cpu to gpu")
-        init_ctx = Context(devices)
-        if self.memory_overlap:
-            mx_size = 0
-            for i in range(config.NUM_ENCODER_LAYERS):
-                mx_size = max(self.encoder[i].nbytes, mx_size)
-            for i in range(config.NUM_DECODER_LAYERS):
-                mx_size = max(self.decoder[i].nbytes, mx_size)
-
-            temp_size = self._get_preapre_buffer_size()
-            overlap_size = mx_size * self.overlap_layers * 4
-            other_size = self.nbytes - self.encoder.nbytes - self.decoder.nbytes
-
-            if overlap_size + other_size + temp_size * 2 + config.DYNAMIC_MEMORY < config.MEMORY_LIMIT:
-                raise ValueError("memory limit not enough, at least %d bytes, bug got %d bytes" % (overlap_size + other_size + temp_size * 2 + config.DYNAMIC_MEMORY, config.MEMORY_LIMIT))
-            logger.info("Using overlap loader: overlap_size %d, temp_size %d, other_size: %d, dynamic_memory %d, memory_limit %d", overlap_size, temp_size, other_size, config.DYNAMIC_MEMORY, config.MEMORY_LIMIT)
-            self.parameter_allocator = ReusedAllocator([ 
-                AllocatorConfig(devices[0], other_size + (overlap_size // 2), temp_size)
-            ]) # FIXME: multi device not supported now.
-            self.overlap_allocator = ReusedAllocator([
-                AllocatorConfig(devices[0], overlap_size // 2, temp_size)
-            ])
-            self.variable_allocator = SizeLimitedAllocator([
-                AllocatorConfig(devices[0], config.MEMORY_LIMIT - other_size - overlap_size - temp_size * 2, 0)
-            ])
-
-            for name, layer in self._sub_layers.items():
-                if name in ["encoder", "decoder"]:
-                    # move first overlap_size layers to device
-                    for i in range(self.overlap_layers):
-                        layer[i].to_device( self.parameter_allocator, init_ctx )
-                else:
-                    layer.to_device( self.parameter_allocator, init_ctx )
-        else:
-            if self.nbytes + config.DYNAMIC_MEMORY < config.MEMORY_LIMIT:
-                raise ValueError("memory limit not enough, at least %d bytes, bug got %d bytes" % (self.nbytes + config.DYNAMIC_MEMORY, config.MEMORY_LIMIT))
+            logger.info("Start loading parameters from cpu to gpu")
             
-            temp_size = self._get_preapre_buffer_size()
-            logger.info("Using static loader: total: %d, temp_size %d, dynamic_memory %d, memory_limit %d", self.nbytes, temp_size, config.DYNAMIC_MEMORY, config.MEMORY_LIMIT)
-            self.parameter_allocator = ReusedAllocator([
-                AllocatorConfig(devices[0], self.nbytes, temp_size)
-            ])
-            self.variable_allocator = SizeLimitedAllocator([
-                AllocatorConfig(devices[0], config.MEMORY_LIMIT - self.nbytes, 0)
-            ])
-            self.to_device(self.parameter_allocator, init_ctx)
-        
-        default_stream = cupy.cuda.get_current_stream()
-        init_ctx.sync_load(default_stream)
-        default_stream.synchronize()
+            load_stream = cupy.cuda.Stream()
+            
+            if self.memory_overlap:
+                mx_size = 0
+                for i in range(config.NUM_ENCODER_LAYERS):
+                    mx_size = max(self.encoder[i].nbytes, mx_size)
+                for i in range(config.NUM_DECODER_LAYERS):
+                    mx_size = max(self.decoder[i].nbytes, mx_size)
+
+                temp_size = self._get_preapre_buffer_size()
+                overlap_size = mx_size * self.overlap_layers * 4
+                other_size = self.nbytes - self.encoder.nbytes - self.decoder.nbytes
+
+                if overlap_size + other_size + temp_size * 2 + config.DYNAMIC_MEMORY < config.MEMORY_LIMIT:
+                    raise ValueError("memory limit not enough, at least %d bytes, bug got %d bytes" % (overlap_size + other_size + temp_size * 2 + config.DYNAMIC_MEMORY, config.MEMORY_LIMIT))
+                logger.info("Using overlap loader: overlap_size %d, temp_size %d, other_size: %d, dynamic_memory %d, memory_limit %d", overlap_size, temp_size, other_size, config.DYNAMIC_MEMORY, config.MEMORY_LIMIT)
+                self.parameter_allocator = ReusedAllocator(other_size + (overlap_size // 2), temp_size)
+                self.overlap_allocator = ReusedAllocator(overlap_size // 2, temp_size)
+                self.variable_allocator = SizeLimitedAllocator(config.MEMORY_LIMIT - other_size - overlap_size - temp_size * 2, 0)
+
+                self.variable_allocator.alloc(config.DYNAMIC_MEMORY) # preallocate
+
+                for name, layer in self._sub_layers.items():
+                    if name in ["encoder", "decoder"]:
+                        # move first overlap_size layers to device
+                        for i in range(self.overlap_layers):
+                            layer[i].to_device( self.parameter_allocator, load_stream )
+                    else:
+                        layer.to_device( self.parameter_allocator, load_stream  )
+            else:
+                if self.nbytes + config.DYNAMIC_MEMORY < config.MEMORY_LIMIT:
+                    raise ValueError("memory limit not enough, at least %d bytes, bug got %d bytes" % (self.nbytes + config.DYNAMIC_MEMORY, config.MEMORY_LIMIT))
+                
+                temp_size = self._get_preapre_buffer_size()
+                logger.info("Using static loader: total: %d, temp_size %d, dynamic_memory %d, memory_limit %d", self.nbytes, temp_size, config.DYNAMIC_MEMORY, config.MEMORY_LIMIT)
+                self.parameter_allocator = ReusedAllocator(self.nbytes, temp_size)
+                self.variable_allocator = SizeLimitedAllocator(config.MEMORY_LIMIT - self.nbytes, 0)
+
+                self.variable_allocator.alloc(config.DYNAMIC_MEMORY) # preallocate
+
+                self.to_device(self.parameter_allocator, load_stream)
+            
+            self.device.synchronize()
 
         logger.info("Cleaning useless parameters on cpu")
         if self.memory_overlap:
@@ -132,5 +117,6 @@ class CPM2(Model):
             self._remove_data()
         logger.info("End of model initialization")
 
-    def forward(self):
-        pass
+    def forward(self, input_idx : np.ndarray):
+        with self.device:
+            self.input_embedding.forward(self.variable_allocator, input_idx)

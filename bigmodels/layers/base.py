@@ -138,21 +138,13 @@ class Layer:
             ret += layer.info(prefix + "    ")
         return ret
     
-    def to_device(self, allocator, ctx):
+    def to_device(self, allocator, load_stream):
         self.__ensure_variables()
 
         for param in self._parameters.values():
-            param.to_device(allocator, ctx)
+            param.to_device(allocator, load_stream)
         for layer in self._sub_layers.values():
-            layer.to_device(allocator, ctx)
-    
-    def assign_device(self, device_list):
-        self.__ensure_variables()
-
-        for param in self._parameters.values():
-            param.assign_device(device_list)
-        for layer in self._sub_layers.values():
-            layer.assign_device(device_list)
+            layer.to_device(allocator, load_stream)
     
     def _get_preapre_buffer_size(self):
         self.__ensure_variables()
@@ -169,3 +161,4 @@ class Layer:
             param._remove_data()
         for layer in self._sub_layers.values():
             layer._remove_data()
+    
