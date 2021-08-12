@@ -11,3 +11,5 @@ class LayerList(Layer):
     def __iter__(self):
         return iter(self._layers)
     
+    def __len__(self):
+        return len(self._layers)

@@ -1,10 +1,9 @@
 from .allocator.base import Allocator
+from .functions.scale_copy import elementwise_copy_scale
 import cupy
 import numpy as np
 import logging
 logger = logging.getLogger(__name__)
-
-elementwise_copy_scale = cupy._core.create_ufunc('bms_scaled_copy', ('bf->f', 'be->e', 'ef->f'), 'out0 = in0 * in1')
 
 class Parameter:
     def __init__(self, shape, dtype):
@@ -72,17 +71,16 @@ class Parameter:
             if not np.issubdtype(self.__dtype, np.floating): # convert * to floating
                 raise AssertionError("Converting dtype from float to int8")
 
-            self.scale = self.__dtype(1) # scale
-
-            allocator.temp_ptr.copy_from_host_async( arr.ctypes.data, arr.nbytes, load_stream)
+            self.scale = cupy.float32(1) # scale
+            cupy.cuda.runtime.memcpyAsync( allocator.temp_ptr.ptr, arr.ctypes.data, arr.nbytes, cupy.cuda.runtime.memcpyHostToDevice, load_stream.ptr)
             
             arr = cupy.ndarray( self.shape, dtype=self.data_dtype, memptr=allocator.temp_ptr, order='C' )   # temp var for arr on gpu
             with load_stream:
                 elementwise_copy_scale(arr, self.__dtype.type(self.data_scale),  self.value)
 
         else:
-            self.scale = self.__dtype(self.data_scale)
-            self.value.data.copy_from_host_async( arr.ctypes.data, arr.nbytes, load_stream )
+            self.scale = cupy.float32(self.data_scale)
+            cupy.cuda.runtime.memcpyAsync( self.value.data.ptr, arr.ctypes.data, arr.nbytes, cupy.cuda.runtime.memcpyHostToDevice, load_stream.ptr)
     
     def _remove_data(self):
         self.data = None

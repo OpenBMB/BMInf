@@ -3,7 +3,7 @@ from ..parameter import Parameter
 from ..allocator import Allocator
 import cupy
 import numpy as np
-from ..tensor import Tensor
+from ..functions.scale_copy import elementwise_copy
 
 class Embedding(Layer):
     TYPE_F32 = 1
@@ -16,8 +16,6 @@ class Embedding(Layer):
             self.weight = Parameter((num_embeddings, embedding_dim), dtype=cupy.float32)
         elif ltype == self.TYPE_F16:
             self.weight = Parameter((num_embeddings, embedding_dim), dtype=cupy.float16)
-        elif ltype == self.TYPE_I8:
-            self.weight = Parameter((num_embeddings, embedding_dim), dtype=cupy.int8)
         else:
             raise TypeError("Unknown type for %s (%s)" % (self.__class__.__name__, ltype))
         
@@ -29,7 +27,14 @@ class Embedding(Layer):
         
         assert isinstance(x, np.ndarray)
 
+        
         out = allocator.alloc_array( x.shape + (self.embedding_dim,), dtype=self.weight.dtype )
         cupy.take(self.weight.value, x, axis=0, out=out)
-        return Tensor(out, self.weight.scale)
+        if out.dtype == cupy.float16:
+            # convert fp16 to fp32
+            fp32_out = allocator.alloc_array( out.shape, dtype=cupy.float32 )
+            elementwise_copy(out, out=fp32_out)
+            out = fp32_out
+            del fp32_out
+        return out
     

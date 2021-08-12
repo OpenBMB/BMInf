@@ -1,5 +1,5 @@
 from typing import List
-from .base import Allocator, AllocatorConfig
+from .base import Allocator
 import cupy
 
 class SizeLimitedAllocator(Allocator):

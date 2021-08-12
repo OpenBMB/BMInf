@@ -1,7 +1,6 @@
-from ..tensor import Tensor
-from ..context import Context
 from ..allocator import Allocator
 import cupy
+from ..backend import create_reduction_func, create_ufunc
 
 _min_max_preamble = '''
 template <typename T>
@@ -21,13 +20,13 @@ __device__ min_max_st<T> my_max(
 }
 '''
 
-quantize_scale_kernel = cupy._core.create_reduction_func(
+quantize_scale_kernel = create_reduction_func(
     'bms_quantize_scale',
     ('e->e', 'f->f'),
-    ('min_max_st<type_in0_raw>(in0)', 'my_max(a, b)', 'out0 = 120 / abs(a.value)',
+    ('min_max_st<type_in0_raw>(in0)', 'my_max(a, b)', 'out0 = abs(a.value) / 120',
      'min_max_st<type_in0_raw>'), None, _min_max_preamble)
 
-quantize_copy = cupy._core.create_ufunc('bms_quantize_copy', ('ef->b', 'ff->b'), 'out0 = round(in0 * in1)')
+quantize_copy = create_ufunc('bms_quantize_copy', ('ef->b', 'ff->b'), 'out0 = round(in0 / in1)')
 
 def quantize(x : cupy.ndarray, out : cupy.ndarray):
     if not cupy.issubdtype(x.dtype, cupy.floating):
@@ -37,11 +36,3 @@ def quantize(x : cupy.ndarray, out : cupy.ndarray):
     scale = quantize_scale_kernel(x) # scale on gpu
     quantize_copy(x, scale, out=out)
     return scale
-
-
-def dequantize(x : cupy.ndarray, scale, out : cupy.ndarray):
-    if not cupy.issubdtype(x.dtype, cupy.integer):
-        raise RuntimeError("Dequantize tensor dtype is %s" % x.dtype)
-    assert x.shape == out.shape
-
-    cupy.multiply(x, scale, out=out)

@@ -29,8 +29,7 @@ def load_tuple(fp):
 
 def load_parameter(fp):    
     shape = load_tuple(fp)
-    scale = struct.unpack("f", fp.read(4))[0]
-    value_size = struct.unpack("I", fp.read(4))[0]
+    scale, value_size = struct.unpack("fI", fp.read(8))
     dtype = load_dtype(fp)
     value = fp.read(value_size)
     return shape, value, scale, dtype
@@ -70,13 +69,16 @@ class Layer:
         logger.debug("Parameter Loader [%s]: size %s", self.__class__.__name__, self.nbytes)
         num_parameters, num_sub_layers = struct.unpack("II", fp.read(8))
         logger.debug("Parameter Loader [%s]: parameters %d, sub_layers %d", self.__class__.__name__, num_parameters, num_sub_layers)
+
         for _ in range(num_parameters):
             name = load_string(fp)
             shape, value, scale, dtype = load_parameter(fp)
             self._parameters[name].put_data(shape, value, scale, dtype)
         for _ in range(num_sub_layers):
             name = load_string(fp)
+            logger.debug("In %s: ==", name)
             self._sub_layers[name].load(fp)
+            logger.debug("Out %s: ==", name)
     
     def dump(self, fp):
         self.__ensure_variables()

@@ -1,38 +1,35 @@
 import cupy
 from .base import Layer
 from ..parameter import Parameter
+from ..allocator import Allocator
+from ..functions.quantization import quantize
+from ..functions.gemm import igemm
+from ..functions.scale_copy import elementwise_copy_scale
 
 class Linear(Layer):
-    TYPE_F32_F32 = 1
-    TYPE_F16_F16 = 2
-    TYPE_I8_I32 = 3
-    TYPE_I8_I8 = 4
-    TYPE_I8_F32 = 5
 
-    def __init__(self, dim_in : int, dim_out : int, ltype : int, bias : bool = True):
+    def __init__(self, dim_in : int, dim_out : int):
+        self.dim_in = dim_in
+        self.dim_out = dim_out
 
-        if ltype == self.TYPE_F32_F32:
-            self.weight = Parameter((dim_out, dim_in), cupy.float32)
-        elif ltype == self.TYPE_F16_F16:
-            self.weight = Parameter((dim_out, dim_in), cupy.float16)
-        elif ltype in [self.TYPE_I8_I32, self.TYPE_I8_I8, self.TYPE_I8_F32]:
-            self.weight = Parameter((dim_out, dim_in), cupy.int8)
-        else:
-            raise TypeError("Unknown type for %s (%s)" % (self.__class__.__name__, ltype))
+        self.weight = Parameter((dim_out, dim_in), cupy.int8)
+
+    def forward(self, allocator : Allocator, x : cupy.ndarray):
+        assert x.dtype == cupy.float32
+        value = x
+
+        batch_size, dim_model, seq_len = value.shape
+        assert dim_model == self.dim_in
+
+        value_i8 = allocator.alloc_array(value.shape, cupy.int8)
+        scale = quantize(value, out=value_i8)
+
+        out_i32 = allocator.alloc_array((batch_size, self.dim_out, seq_len), cupy.int32)
         
-        if bias:
-            if ltype == self.TYPE_F32_F32:
-                self.bias = Parameter((dim_out,), cupy.float32)
-            elif ltype == self.TYPE_F16_F16:
-                self.bias = Parameter((dim_out,), cupy.float16)
-            elif ltype == self.TYPE_I8_I32 or ltype == self.TYPE_I8_I8:
-                self.bias = Parameter((dim_out,), cupy.int32)
-            elif ltype == self.TYPE_I8_F32:
-                self.bias = Parameter((dim_out,), cupy.float32)
-
-        self.ltype = ltype
-
-    def forward(self, x):
-        # call function linear
-
-        pass
+        # FIXME: igemm Stried Batched cupy
+        for i in range(batch_size):
+            igemm(value_i8[i], True, self.weight.value, True, out_i32[i])
+        
+        out_f32 = allocator.alloc_array(out_i32.shape, cupy.float32)
+        elementwise_copy_scale(out_i32, scale * self.weight.scale, out_f32)
+        return out_f32

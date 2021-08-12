@@ -1,10 +1,7 @@
-from cupy._statistics.order import quantile
 from .base import Layer
 from ..parameter import Parameter
 import cupy
 from ..allocator import Allocator
-from ..tensor import Tensor
-from ..functions.quantization import dequantize, quantize
 
 l2norm_kernel = cupy.ReductionKernel(
     'T x',
@@ -16,53 +13,35 @@ l2norm_kernel = cupy.ReductionKernel(
     'bms_l2norm'
 )
 
-scaled_add = cupy._core.create_ufunc(
-    "bms_scaled_add",
-    ('efe->e', 'fff->f'),
-    'out0 = in0 + in1 * in2'
-)
-
 class LayerNorm(Layer):
     def __init__(self, dim_in):
+        self.dim_model = dim_in
         self.weight = Parameter((dim_in,), dtype=cupy.float32)
         
 
-    def forward(self, allocator : Allocator, x : Tensor, inplace = True):
+    def forward(self, allocator : Allocator, x : cupy.ndarray, inplace = True):
         # forward inplace        
-        value = x.value
-        scale = x.scale
+        value = x
 
-        orig_type = value.dtype
+        batch_size, dim_model, seq_len = value.shape
+        assert dim_model == self.dim_model
+        assert value.dtype == cupy.float32 or value.dtype == cupy.float16
 
-        if orig_type == cupy.int8:
-            # dequantize
-            dqv = allocator.alloc_array(value.shape, dtype=cupy.float32)
-            dequantize(value, scale, dqv)
-        else:
-            dqv = value
+        dqv = value
 
-        out = allocator.alloc_array(dqv.shape[:-1] + (1,), dqv.dtype)
-        l2norm_kernel(dqv, axis=-1, keepdims=True, out=out)
+        out = allocator.alloc_array((batch_size, 1, seq_len), dqv.dtype)
+        l2norm_kernel(dqv, axis=1, keepdims=True, out=out)
 
-        if inplace or orig_type == cupy.int8:
+        if inplace and value.dtype == cupy.float32 :
             dqv *= out
         else:
-            dqv = dqv * out # copied here
+            nw_dqv = allocator.alloc_array(dqv.shape, dtype=cupy.float32)
+            cupy.multiply(dqv, out, out=nw_dqv)
+            dqv = nw_dqv
+            del nw_dqv
 
         del out
         
-        dqv *= self.weight.value
+        dqv *= self.weight.value[cupy.newaxis,:,cupy.newaxis]
 
-        if orig_type == cupy.int8:
-            if inplace:
-                out = x.value
-            else:
-                out = allocator.alloc_array(x.value.shape, orig_type)
-
-            quantize(dqv, out)
-            value = out
-        else:
-            value = dqv
-            
-
-        return Tensor(value, scale)
+        return dqv

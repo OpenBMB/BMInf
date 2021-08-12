@@ -11,15 +11,13 @@ class CPM2Configuration(Configuration):
     NUM_POSITION_BUCKETS = 32
     VOCAB_SIZE = 26240
 
-    BIT_SIZE = 8
-
     MEMORY_OVERLAP = True
     OVERLAP_LAYERS = 2
     ENCODER_ONLY = False
     DEVICE = 0
     
-    MEMORY_LIMIT = 1024 * 1024 * 1024 * 3.5 # total memory
+    MEMORY_LIMIT = 1024 * 1024 * 1024 * 4 # total memory
     
-    DYNAMIC_MEMORY = 1024 * 1024 * 1024 # memory size for non-parameter variables
+    DYNAMIC_MEMORY = 1024 * 1024 * 512 # memory size for non-parameter variables
 
     MODEL_PATH = "./checkpoint.pt"
