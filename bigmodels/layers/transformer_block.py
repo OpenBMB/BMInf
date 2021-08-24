@@ -6,6 +6,8 @@ from .attention import SelfAttention, PartialAttention
 from .dense_gelu_dense import DenseGeluDense
 from .layer_norm import LayerNorm
 from ..allocator import Allocator
+import logging
+logger = logging.getLogger(__name__)
 
 class TransformerBlockEncoder(Layer):
     def __init__(self, dim_model, dim_ff, dim_qkv, num_heads):
@@ -31,9 +33,12 @@ class TransformerBlockEncoder(Layer):
 
         tensor_out = hidden_state
         assert hidden_state.dtype == cupy.float16
+        logger.info("Encoder transformer block -- layer norm self-attn")
         x = self.layer_nrom_before_self_attn.forward(allocator, hidden_state) # copy hidden state, e -> e
         assert x.dtype == cupy.float16
         assert x.shape == (batch_size, dim_model, seq_len)
+
+        logger.info("Encoder transformer block -- self attention")
         x = self.self_attention.forward(allocator, x, attention_mask, self_attn_position_bias)
         assert x.dtype == cupy.float16
         assert x.shape == (batch_size, dim_model, seq_len)
@@ -43,9 +48,12 @@ class TransformerBlockEncoder(Layer):
         else:
             tensor_out = tensor_out + x # copied here
 
+        logger.info("Encoder transformer block -- layer norm ff")
         x = self.layer_nrom_before_ff.forward(allocator, tensor_out)
         assert x.dtype == cupy.float16
         assert x.shape == (batch_size, dim_model, seq_len)
+
+        logger.info("Encoder transformer block -- ff")
         x = self.dense_gelu_dense.forward(allocator, x)
         assert x.dtype == cupy.float16
         assert x.shape == (batch_size, dim_model, seq_len)
@@ -96,11 +104,12 @@ class TransformerBlockDecoder(Layer):
 
         # ==================================
         # self attention
-
+        logger.info("Decoder transformer block -- layer norm self-attn")
         normalized_hidden = self.layer_nrom_before_self_attn.forward(allocator, curr_hidden_state[:, :, cupy.newaxis])[:, :, 0]
 
 
         assert normalized_hidden.shape == (batch_size, dim_model)
+        logger.info("Decoder transformer block -- self attention")
         attn_out = self.self_attention.forward(
             allocator,
             normalized_hidden,  # (batch, dim_model)
@@ -117,10 +126,11 @@ class TransformerBlockDecoder(Layer):
         
         # ==================================
         # cross attention
-        
+        logger.info("Decoder transformer block -- layer norm cross-attn")
         normalized_hidden = self.layer_nrom_before_cross_attn.forward(allocator, curr_hidden_state[:, :, cupy.newaxis])[:, :, 0]
 
         assert normalized_hidden.shape == (batch_size, dim_model)
+        logger.info("Decoder transformer block -- cross attention")
         attn_out = self.cross_attention.forward(
             allocator,
             normalized_hidden,
@@ -133,9 +143,11 @@ class TransformerBlockDecoder(Layer):
 
         curr_hidden_state += attn_out
 
+        logger.info("Decoder transformer block -- layer norm ff")
         normalized_hidden = self.layer_nrom_before_ff.forward(allocator, curr_hidden_state[:, :, cupy.newaxis])
         assert normalized_hidden.shape == (batch_size, dim_model, 1)
         
+        logger.info("Decoder transformer block -- ff")
         ff_out = self.dense_gelu_dense.forward(allocator, normalized_hidden)
         assert ff_out.shape == (batch_size, dim_model, 1)
         curr_hidden_state += ff_out[:, :, 0]
