@@ -15,7 +15,7 @@ def generate_span(model : bigmodels.models.CPM2, sentence):
     end_token = model.get_token_id("<s_1>")
     record = False
 
-    for token_id in model.decode( hidden_state, input_length ):
+    for token_id in model.decode( hidden_state, input_length, sampler="greedy"):
         token_id = token_id[0]
 
         if token_id == begin_token:
@@ -39,11 +39,13 @@ def generate(model : bigmodels.models.CPM2, sentence):
             if span.find( "<eod>") != -1:
                 break
 
+input_text = """问题：游戏《绝地求生》中有哪些鲜为人知的技巧？\n描述：\n"""
+
 def main():
     print("Loading model")
     cpm2 = bigmodels.models.CPM2()
     print("Start")
-    generate(cpm2, "习近平总书记23日下午来到塞罕坝机械林场尚海纪念林。纪念林位于原马蹄坑造林会战区，是塞罕坝精神发源地、百万亩林海起源地。习近平同林场职工代表亲切交流，他强调，你们做的事非常有示范意义，对全国生态文明建设具有激励作用和深远影响。")
+    generate(cpm2, input_text)
 
 if __name__ == "__main__":
     main()
