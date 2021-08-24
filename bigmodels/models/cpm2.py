@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Union
 import cupy
 from .base import Model
 from ..layers.transformer_block import TransformerBlockDecoder, TransformerBlockEncoder
@@ -27,11 +27,12 @@ class CPM2(Model):
         else:
             self.overlap_layers = max(config.NUM_ENCODER_LAYERS, config.NUM_DECODER_LAYERS)
         self.encoder_only = config.ENCODER_ONLY
+        self.max_decoder_length = config.MAX_DECODER_LENGTH
 
-        self.input_embedding = Embedding(config.VOCAB_SIZE, config.DIM_MODEL, ltype=Embedding.TYPE_F16)
+        self.input_embedding = Embedding(config.VOCAB_SIZE, config.DIM_MODEL)
         self.input_mask = InputMask(is_decoder=False)
 
-        self.encoder_position_bias = PositionBias(config.NUM_POSITION_BUCKETS, config.NUM_HEADS, False, PositionBias.TYPE_F32)
+        self.encoder_position_bias = PositionBias(config.NUM_POSITION_BUCKETS, config.NUM_HEADS, is_decoder=False)
         self.num_encoder = config.NUM_ENCODER_LAYERS
         self.encoder = LayerList([
             TransformerBlockEncoder(config.DIM_MODEL, config.DIM_FF, config.DIM_KV, config.NUM_HEADS)
@@ -39,11 +40,12 @@ class CPM2(Model):
         ])
         self.encoder_final_layer_nrom = LayerNorm(config.DIM_MODEL)
         self.num_heads = config.NUM_HEADS
+        self.dim_qkv = config.DIM_KV
 
         if not self.encoder_only:
-            self.decoder_position_bias = PositionBias(config.NUM_POSITION_BUCKETS, config.NUM_HEADS, True, PositionBias.TYPE_F32)
+            self.decoder_position_bias = PositionBias(config.NUM_POSITION_BUCKETS, config.NUM_HEADS, is_decoder=True)
             self.encoder_kv = EncoderKeyValueProjection(config.NUM_DECODER_LAYERS, config.DIM_MODEL, config.DIM_KV, config.NUM_HEADS)
-            self.lm_head = LMHead(config.VOCAB_SIZE, config.DIM_MODEL, ltype=LMHead.TYPE_F32)
+            self.lm_head = LMHead(config.VOCAB_SIZE, config.DIM_MODEL)
             self.num_decoder = config.NUM_DECODER_LAYERS
             self.decoder = LayerList([
                 TransformerBlockDecoder(config.DIM_MODEL, config.DIM_FF, config.DIM_KV, config.NUM_HEADS)
@@ -69,17 +71,16 @@ class CPM2(Model):
                     for i in range(config.NUM_DECODER_LAYERS):
                         mx_size = max(self.decoder[i].nbytes, mx_size)
 
-                    temp_size = self._get_preapre_buffer_size()
                     overlap_size = mx_size * self.overlap_layers * 4
                     other_size = self.nbytes - self.encoder.nbytes - self.decoder.nbytes
 
-                    logger.info("Using overlap loader: overlap_size %d, temp_size %d, other_size: %d, dynamic_memory %d, memory_limit %d", overlap_size, temp_size, other_size, config.DYNAMIC_MEMORY, config.MEMORY_LIMIT)
-                    if overlap_size + other_size + temp_size * 2 + config.DYNAMIC_MEMORY > config.MEMORY_LIMIT:
-                        raise ValueError("memory limit not enough, at least %d bytes, bug got %d bytes" % (overlap_size + other_size + temp_size * 2 + config.DYNAMIC_MEMORY, config.MEMORY_LIMIT))
-                    self.parameter_allocator = ReusedAllocator(other_size + (overlap_size // 2), temp_size)
-                    self.overlap_allocator = [ReusedAllocator(overlap_size // 4, temp_size), ReusedAllocator(overlap_size // 4, temp_size)]
+                    logger.info("Using overlap loader: overlap_size %d, other_size: %d, dynamic_memory %d, memory_limit %d", overlap_size, other_size, config.DYNAMIC_MEMORY, config.MEMORY_LIMIT)
+                    if overlap_size + other_size + config.DYNAMIC_MEMORY > config.MEMORY_LIMIT:
+                        raise ValueError("memory limit not enough, at least %d bytes, bug got %d bytes" % (overlap_size + other_size + config.DYNAMIC_MEMORY, config.MEMORY_LIMIT))
+                    self.parameter_allocator = ReusedAllocator(other_size + (overlap_size // 2))
+                    self.overlap_allocator = [ReusedAllocator(overlap_size // 4), ReusedAllocator(overlap_size // 4)]
 
-                    self.variable_allocator = SizeLimitedAllocator(config.MEMORY_LIMIT - other_size - overlap_size - temp_size * 2, 0)
+                    self.variable_allocator = SizeLimitedAllocator(config.MEMORY_LIMIT - other_size - overlap_size)
 
                     self.variable_allocator.alloc(config.DYNAMIC_MEMORY) # preallocate
 
@@ -94,10 +95,9 @@ class CPM2(Model):
                     if self.nbytes + config.DYNAMIC_MEMORY < config.MEMORY_LIMIT:
                         raise ValueError("memory limit not enough, at least %d bytes, bug got %d bytes" % (self.nbytes + config.DYNAMIC_MEMORY, config.MEMORY_LIMIT))
                     
-                    temp_size = self._get_preapre_buffer_size()
-                    logger.info("Using static loader: total: %d, temp_size %d, dynamic_memory %d, memory_limit %d", self.nbytes, temp_size, config.DYNAMIC_MEMORY, config.MEMORY_LIMIT)
-                    self.parameter_allocator = ReusedAllocator(self.nbytes, temp_size)
-                    self.variable_allocator = SizeLimitedAllocator(config.MEMORY_LIMIT - self.nbytes, 0)
+                    logger.info("Using static loader: total: %d, dynamic_memory %d, memory_limit %d", self.nbytes, config.DYNAMIC_MEMORY, config.MEMORY_LIMIT)
+                    self.parameter_allocator = ReusedAllocator(self.nbytes)
+                    self.variable_allocator = SizeLimitedAllocator(config.MEMORY_LIMIT - self.nbytes)
 
                     self.variable_allocator.alloc(config.DYNAMIC_MEMORY) # preallocate
 
@@ -120,9 +120,7 @@ class CPM2(Model):
             logger.info("End of model initialization")
 
 
-    def forward(self, input_idx : np.ndarray, input_length : List[int]):
-
-        tmp = []
+    def encode(self, input_idx : np.ndarray, input_length : List[int]):
         with self.device:
             load_stream = self.load_stream
             calc_stream = cupy.cuda.get_current_stream()
@@ -131,12 +129,23 @@ class CPM2(Model):
 
             batch_size, seq_len = input_idx.shape
 
+            if seq_len % 16 != 0:
+                nw_seq_len = seq_len + (16 - (seq_len % 16))   # round up
+                nw_input_idx = np.zeros((batch_size, nw_seq_len), dtype=np.int64)
+                nw_input_idx[:, :seq_len] = input_idx
+                seq_len = nw_seq_len
+                input_idx = nw_input_idx
+                del nw_seq_len
+                del nw_input_idx
+
             x = self.input_embedding.forward(self.variable_allocator, input_idx)
             encoder_attn_mask = self.input_mask.forward(self.variable_allocator, input_length, seq_len)
-            x.value = x.value.transpose((0, 2, 1))
+            x = x.transpose((0, 2, 1))
+            assert x.dtype == cupy.float16
+
             x_pos = self.encoder_position_bias.forward(self.variable_allocator, seq_len, seq_len)
-            assert len(x_pos.value.shape) == 4
-            assert x_pos.value.shape == (1, self.num_heads, seq_len, seq_len)
+            assert x_pos.shape == (1, self.num_heads, seq_len, seq_len)
+            assert x_pos.dtype == cupy.float16
 
             for i in range(self.num_encoder):
                 if i % self.overlap_layers == 0:
@@ -146,7 +155,7 @@ class CPM2(Model):
                     self.variable_allocator, 
                     x,
                     encoder_attn_mask,
-                    x_pos if i == 0 else None,
+                    x_pos,
                     True
                 )
                 if i % self.overlap_layers == self.overlap_layers - 1 and i + 1 < self.num_encoder:
@@ -160,8 +169,86 @@ class CPM2(Model):
                     
                     calc_event = calc_stream.record()
                     load_event = load_stream.record()
-                self.device.synchronize()
-                tmp.append(cupy.asnumpy(x.value[0].T))
-        with open("hidden_i8.npy", "wb") as f:
-            np.save(f, np.stack(tmp).astype(np.float16))
-        return x
+            x = self.encoder_final_layer_nrom.forward(self.variable_allocator, x)
+            return x    # (batch, dim_model, seq_len)
+
+    def decode(self, hidden_state, input_length):
+        if self.encoder_only:
+            raise ValueError("CPM2-encoder only")
+        with self.device:
+            batch_size, _, seq_ipt_len = hidden_state.shape
+
+            # (batch, num_decoder, 2, num_heads, dim_kv, seq_ipt_len),
+            encoder_layers_kv = self.encoder_kv.forward(self.variable_allocator, hidden_state)
+
+            # (1, num_heads, max_decoder_length, max_decoder_length)
+            dec_pos = self.decoder_position_bias.forward(
+                self.variable_allocator,
+                self.max_decoder_length,
+                self.max_decoder_length
+            )
+
+            past_kv = self.variable_allocator.alloc_array((self.num_decoder, batch_size, 2, self.num_heads, self.dim_qkv, self.max_decoder_length), dtype=cupy.float32)
+            past_kv[:] = 0
+            
+            encoder_mask = self.input_mask.forward(self.variable_allocator, input_length, seq_ipt_len)[:, :, 0]
+
+            last_ipt = [1] * batch_size
+
+        for i in range(self.max_decoder_length):
+            with self.device:
+                x = self.decode_step(
+                    past_kv,
+                    encoder_layers_kv,
+                    dec_pos,
+                    encoder_mask,
+                    last_ipt,
+                    i,
+                )
+                last_ipt = cupy.asnumpy(x.argmax(axis=1))
+                yield last_ipt
+    
+    def decode_step(self, 
+            past_kv : cupy.ndarray,                     # (num_decoder, batch, 2, num_heads, dim_kv, max_decoder_length)
+            encoder_layers_kv : cupy.ndarray,           # (batch, num_decoder, 2, num_heads, dim_kv, seq_ipt_len)
+            dec_position_bias : cupy.ndarray,           # (1, num_heads, max_decoder_length, max_decoder_length)
+            encoder_mask : cupy.ndarray,                # (batch, seq_ipt_len)
+            step_input : Union[List[int], np.ndarray],  # (batch,)
+            step_pos : int
+        ):
+        with self.device:
+            load_stream = self.load_stream
+            calc_stream = cupy.cuda.get_current_stream()
+            load_event = load_stream.record()
+            calc_event = calc_stream.record()
+
+            x = self.input_embedding.forward(self.variable_allocator, step_input)    # (batch, dim_model)
+            for i in range(self.num_decoder):
+                if i % self.overlap_layers == 0:
+                    calc_stream.wait_event(load_event)
+                logger.info("Calc decoder layer %d", i)
+
+                x = self.decoder[i].forward(
+                    self.variable_allocator,
+                    x,                          # (batch, dim_model)
+                    past_kv[i],                 # (batch, 2, num_heads, dim_kv, max_decoder_length)
+                    step_pos,                   # 1
+                    encoder_mask,               # (batch, seq_ipt_len)
+                    encoder_layers_kv[:, i],    # (batch, 2, num_heads, dim_kv, seq_ipt_len)
+                    dec_position_bias,          # (1, num_heads, max_decoder_length, max_decoder_length)
+                    True
+                )
+                if i % self.overlap_layers == self.overlap_layers - 1 and i + 1 < self.num_decoder:
+                    overlap_idx = ((i + 1) // self.overlap_layers) % 2
+                    olp_allocator = self.overlap_allocator[overlap_idx]
+                    olp_allocator.reset()
+                    load_stream.wait_event(calc_event)
+                    for j in range(i + 1, min(i + self.overlap_layers, self.num_decoder) + 1):
+                        logger.info("Load decoder layer %d", j)
+                        self.decoder[j].to_device(olp_allocator, load_stream)
+                    
+                    calc_event = calc_stream.record()
+                    load_event = load_stream.record()
+            x = self.decoder_final_layer_nrom.forward(self.variable_allocator, x[:, :, cupy.newaxis])[:, :, 0]
+            x = self.lm_head.forward(self.variable_allocator, x)
+            return x

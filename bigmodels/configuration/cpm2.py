@@ -10,6 +10,7 @@ class CPM2Configuration(Configuration):
     NUM_DECODER_LAYERS = 24
     NUM_POSITION_BUCKETS = 32
     VOCAB_SIZE = 26240
+    MAX_DECODER_LENGTH = 256
 
     MEMORY_OVERLAP = True
     OVERLAP_LAYERS = 2

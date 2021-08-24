@@ -3,10 +3,8 @@ from .base import Allocator
 import cupy
 
 class ReusedAllocator(Allocator):
-    def __init__(self, size, temp_size):
-        total = size + temp_size
-
-        self.__base_ptr = cupy.cuda.Memory(total)
+    def __init__(self, size):
+        self.__base_ptr = cupy.cuda.Memory(size)
         self.__allocate_limit = size
         self.__offset = 0
 
@@ -21,6 +19,3 @@ class ReusedAllocator(Allocator):
             raise RuntimeError("Memory limit exceeded %d > %d" % (self.__offset, self.__allocate_limit))
         return cupy.cuda.MemoryPointer(self.__base_ptr, offset)
     
-    @property
-    def temp_ptr(self):
-        return cupy.cuda.MemoryPointer(self.__base_ptr, self.__allocate_limit)

@@ -29,10 +29,10 @@ def load_tuple(fp):
 
 def load_parameter(fp):    
     shape = load_tuple(fp)
-    scale, value_size = struct.unpack("fI", fp.read(8))
+    value_size = struct.unpack("I", fp.read(4))[0]
     dtype = load_dtype(fp)
     value = fp.read(value_size)
-    return shape, value, scale, dtype
+    return shape, value, dtype
 
 def dump_dtype(v, fp):
     sv = -1
@@ -56,9 +56,9 @@ def dump_tuple(v, fp):
     for i in v:
         fp.write( struct.pack("I", i) )
 
-def dump_parameter(shape, scale, data, data_dtype, fp):
+def dump_parameter(shape, data, data_dtype, fp):
     dump_tuple(shape, fp)
-    fp.write( struct.pack("fI", scale, len(data)) )
+    fp.write( struct.pack("I", len(data)) )
     dump_dtype(data_dtype, fp)
     fp.write(data)
 
@@ -72,8 +72,8 @@ class Layer:
 
         for _ in range(num_parameters):
             name = load_string(fp)
-            shape, value, scale, dtype = load_parameter(fp)
-            self._parameters[name].put_data(shape, value, scale, dtype)
+            shape, value, dtype = load_parameter(fp)
+            self._parameters[name].put_data(shape, value, dtype)
         for _ in range(num_sub_layers):
             name = load_string(fp)
             logger.debug("In %s: ==", name)
@@ -87,8 +87,8 @@ class Layer:
         fp.write( struct.pack("II", num_parameters, num_sub_layers) )
         for kw, val in self._parameters.items():
             dump_string(kw, fp)
-            if val.data_scale is not None and val.data is not None or val.data_dtype is None:
-                dump_parameter(val.shape, val.data_scale, val.data, val.data_dtype, fp)
+            if val.data is not None:
+                dump_parameter(val.shape, val.data, val.dtype, fp)
             else:
                 raise RuntimeError("Paraemter %s has no data" % kw)
         for kw, val in self._sub_layers.items():
@@ -147,17 +147,7 @@ class Layer:
             param.to_device(allocator, load_stream)
         for layer in self._sub_layers.values():
             layer.to_device(allocator, load_stream)
-    
-    def _get_preapre_buffer_size(self):
-        self.__ensure_variables()
 
-        ret = 0
-        for param in self._parameters.values():
-            ret = max(ret, param._prepare_size)
-        for layer in self._sub_layers.values():
-            ret = max(ret, layer._get_preapre_buffer_size())
-        return ret
-    
     def _remove_data(self):
         for param in self._parameters.values():
             param._remove_data()

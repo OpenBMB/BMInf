@@ -5,7 +5,34 @@ from ..scalar import get_scalar_ptr
 
 logger = logging.getLogger(__name__)
 
+def round_up(x, d):
+    return (x + d - 1) // d * d
+
+def round_matrix(x):
+    m, n = x.shape
+    round_n = round_up(n, 16)
+    round_m = round_up(m, 16)
+    if round_n == n and round_m == m:
+        return x
+    
+    nw_x = cupy.zeros( (round_m, round_n), dtype=x.dtype )
+    nw_x[:m, :n] = x
+    return nw_x
+
 def igemm(a, aT, b, bT, out):
+    
+    round_a = round_matrix(a)
+    round_b = round_matrix(b)
+    round_out = round_matrix(out)
+
+    _igemm(round_a, aT, round_b, bT, round_out)
+
+    if round_out.shape != out.shape:
+        m, n = out.shape
+        out[:, :] = round_out[:m, :n]
+    
+
+def _igemm(a, aT, b, bT, out):
     assert isinstance(a, cupy.ndarray)
     assert isinstance(b, cupy.ndarray)
     assert isinstance(out, cupy.ndarray)
@@ -36,7 +63,6 @@ def igemm(a, aT, b, bT, out):
     assert a.dtype == b.dtype
     assert out.shape[0] == n
     assert out.shape[1] == m
-
     if a.dtype == cupy.int8:
         type_in = cupy.cuda.runtime.CUDA_R_8I
     else:
@@ -110,6 +136,8 @@ def sgemmBatched(a, aT, b, bT, out):
     assert b.device == out.device
     assert a.dtype == b.dtype
     assert out.dtype == b.dtype
+    assert a.dtype == cupy.float32
+    assert b.dtype == cupy.float32
     assert out.dtype == cupy.float32
     
     if aT:
@@ -147,9 +175,9 @@ def sgemmBatched(a, aT, b, bT, out):
     stride_b = b._strides[0] // itemsize
     stride_c = out._strides[0] // itemsize
 
-    if m % 8 != 0:
+    if m % 8 != 0 and m > 1:
         logger.warning("[WARN] gemm m % 8 != 0")
-    if k % 8 != 0:
+    if k % 8 != 0 and k > 1:
         logger.warning("[WARN] gemm k % 8 != 0")
     if not (bT or n % 8 == 0):
         logger.warning("[WARN] gemm n % 8 != 0 and bT == False")
@@ -165,11 +193,11 @@ def sgemmBatched(a, aT, b, bT, out):
         logger.warning("[WARN] gemm intptr_t(B) % 16 != 0")
     if out.data.ptr % 16 != 0:
         logger.warning("[WARN] gemm intptr_t(C) % 16 != 0")
-    if lda % 16 != 0:
+    if (lda * itemsize) % 16 != 0 and lda > 1:
         logger.warning("[WARN] gemm lda % 16 != 0")
-    if ldb % 16 != 0:
+    if (ldb * itemsize) % 16 != 0 and ldb > 1:
         logger.warning("[WARN] gemm ldb % 16 != 0")
-    if ldc % 16 != 0:
+    if (ldc * itemsize) % 16 != 0 and ldc > 1:
         logger.warning("[WARN] gemm ldc % 16 != 0")
 
     cublas.sgemmStridedBatched(

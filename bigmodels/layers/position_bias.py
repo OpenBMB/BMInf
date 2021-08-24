@@ -8,21 +8,12 @@ import cupy
 
 
 class PositionBias(Layer):
-    TYPE_F32 = 1
-    TYPE_F16 = 2
-    TYPE_I8 = 3
-    def __init__(self, num_buckets, num_heads, is_decoder, ltype):
+    def __init__(self, num_buckets, num_heads, is_decoder):
         self.num_buckets = num_buckets
         self.is_decoder = is_decoder
         self.num_heads = num_heads
-        if ltype == self.TYPE_F32:
-            self.embedding = Embedding(num_buckets, num_heads, Embedding.TYPE_F32)
-        elif ltype == self.TYPE_F16:
-            self.embedding = Embedding(num_buckets, num_heads, Embedding.TYPE_F16)
-        elif ltype == self.TYPE_I8:
-            self.embedding = Embedding(num_buckets, num_heads, Embedding.TYPE_I8)
-        else:
-            raise TypeError("Unknown type for %s (%s)" % (self.__class__.__name__, ltype))
+        self.embedding = Embedding(num_buckets, num_heads)
+
     
     def _relative_position_bucket(self, relative_position, bidirectional=True, num_buckets=32, max_distance=128):
         """
@@ -48,7 +39,7 @@ class PositionBias(Layer):
             relative_buckets += (relative_position > 0).astype(np.int32) * num_buckets
             relative_position = np.abs(relative_position)
         else:
-            relative_position = -np.min(relative_position, 0)
+            relative_position = -np.clip(relative_position, None, 0)
         # now relative_position is in the range [0, inf)
 
         # half of the buckets are for exact increments in positions
@@ -76,5 +67,5 @@ class PositionBias(Layer):
         )
         out = self.embedding.forward(allocator, relative_position_bucket)
         assert out.shape == (query_len, key_len, self.num_heads)
-        out = out.transpose((2, 0, 1))[cupy.newaxis]
-        return out
+        out = out.transpose((2, 1, 0))[cupy.newaxis]
+        return out  # (1, num_heads, key_len, query_len)

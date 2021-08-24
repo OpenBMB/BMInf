@@ -23,7 +23,3 @@ class Allocator:
 
     def _alloc(self, size):
         raise NotImplementedError()
-
-    @property
-    def temp_ptr(self):
-        raise NotImplementedError()

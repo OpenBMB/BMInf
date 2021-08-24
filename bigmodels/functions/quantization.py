@@ -22,17 +22,21 @@ __device__ min_max_st<T> my_max(
 
 quantize_scale_kernel = create_reduction_func(
     'bms_quantize_scale',
-    ('e->e', 'f->f'),
-    ('min_max_st<type_in0_raw>(in0)', 'my_max(a, b)', 'out0 = abs(a.value) / 120',
+    ('e->e', 'f->e', 'e->f', 'f->f'),
+    ('min_max_st<type_in0_raw>(in0)', 'my_max(a, b)', 'out0 = abs(a.value) / 127',
      'min_max_st<type_in0_raw>'), None, _min_max_preamble)
 
-quantize_copy = create_ufunc('bms_quantize_copy', ('ef->b', 'ff->b'), 'out0 = round(in0 / in1)')
+quantize_copy = create_ufunc('bms_quantize_copy', ('ee->b', 'fe->b', 'ff->b'), 'out0 = round(in0 / in1)')
 
-def quantize(x : cupy.ndarray, out : cupy.ndarray):
-    if not cupy.issubdtype(x.dtype, cupy.floating):
-        raise RuntimeError("Quantize tensor dtype is %s" % x.dtype)
+def quantize(x : cupy.ndarray, out : cupy.ndarray, scale : cupy.ndarray, axis=-1):
+    assert x.dtype == cupy.float16 or x.dtype == cupy.float32
     assert x.shape == out.shape
     
-    scale = quantize_scale_kernel(x) # scale on gpu
+    if axis < 0:
+        axis += len(x.shape)
+    
+    assert scale.dtype == cupy.float16
+    assert scale.shape == x.shape[:axis] + (1,) + x.shape[axis + 1:]
+
+    quantize_scale_kernel(x, axis=axis, keepdims=True, out=scale) # scale on gpu
     quantize_copy(x, scale, out=out)
-    return scale
