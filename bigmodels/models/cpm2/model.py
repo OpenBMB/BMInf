@@ -1,23 +1,29 @@
-from typing import List, Union
+from typing import Callable, Generator, List, Union
 import cupy
-from .base import Model
-from ..layers.transformer_block import TransformerBlockDecoder, TransformerBlockEncoder
-from ..layers.encoder_kv import EncoderKeyValueProjection
-from ..layers.position_bias import PositionBias
-from ..layers.embedding import Embedding
-from ..layers.layer_norm import LayerNorm
-from ..layers.mask import InputMask
-from ..layers.lm_head import LMHead
-from ..layers.layer_list import LayerList
-from ..configuration import CPM2Configuration
-from ..allocator import ReusedAllocator, SizeLimitedAllocator
+from ..base import Model
+from ...layers.transformer_block import TransformerBlockDecoder, TransformerBlockEncoder
+from ...layers.encoder_kv import EncoderKeyValueProjection
+from ...layers.position_bias import PositionBias
+from ...layers.embedding import Embedding
+from ...layers.layer_norm import LayerNorm
+from ...layers.mask import InputMask
+from ...layers.lm_head import LMHead
+from ...layers.layer_list import LayerList
+from .config import CPM2Configuration
+from .tokenizer import CPM2Tokenizer
+from ...allocator import ReusedAllocator, SizeLimitedAllocator
 import numpy as np
 import logging
+from ... import data
+from ...utils import round_up
 
 logger = logging.getLogger(__name__)
 
 class CPM2(Model):
-    def __init__(self, config : CPM2Configuration):
+    def __init__(self, config : CPM2Configuration = None):
+        if config is None:
+            config = CPM2Configuration()
+
         # Build Model
         logger.info("Building model")
 
@@ -53,12 +59,18 @@ class CPM2(Model):
             ])
             self.decoder_final_layer_nrom = LayerNorm(config.DIM_MODEL)
 
-        if config.MODEL_PATH is not None:
+        if config.MODEL_NAME is not None:
             # init parameter
+
+            model_path = data.ensure_file(config.MODEL_NAME, "checkpoint.pt")
+            vocab_path = data.ensure_file(config.MODEL_NAME, "vocab.txt")
+
+            self.tokenizer = CPM2Tokenizer(vocab_path)
+
             self.device = cupy.cuda.Device(config.DEVICE)
             with self.device:
                 logger.info("Start loading parameters from disk to cpu")
-                self.load( open(config.MODEL_PATH, "rb") )
+                self.load( open(model_path, "rb") )
 
                 logger.info("Start loading parameters from cpu to gpu")
                 
@@ -130,7 +142,7 @@ class CPM2(Model):
             batch_size, seq_len = input_idx.shape
 
             if seq_len % 16 != 0:
-                nw_seq_len = seq_len + (16 - (seq_len % 16))   # round up
+                nw_seq_len = round_up(seq_len, 16)  # round up
                 nw_input_idx = np.zeros((batch_size, nw_seq_len), dtype=np.int64)
                 nw_input_idx[:, :seq_len] = input_idx
                 seq_len = nw_seq_len
@@ -172,9 +184,20 @@ class CPM2(Model):
             x = self.encoder_final_layer_nrom.forward(self.variable_allocator, x)
             return x    # (batch, dim_model, seq_len)
 
-    def decode(self, hidden_state, input_length):
+    def decode(self, hidden_state, input_length, sampler : Union[str, Callable[[cupy.ndarray], int] ] = "random") -> Generator[int, None, None]:
         if self.encoder_only:
             raise ValueError("CPM2-encoder only")
+
+        if isinstance(sampler, str):
+            if sampler == "greedy":
+                from ...utils import greedy_sampler
+                sampler = greedy_sampler
+            elif sampler == "random":
+                from ...utils import random_sampler
+                sampler = random_sampler
+            else:
+                raise ValueError("Unknown sampler type %s" % sampler)
+        
         with self.device:
             batch_size, _, seq_ipt_len = hidden_state.shape
 
@@ -205,7 +228,9 @@ class CPM2(Model):
                     last_ipt,
                     i,
                 )
-                last_ipt = cupy.asnumpy(x.argmax(axis=1))
+                last_ipt = [
+                    sampler(x[i]) for i in range(batch_size)
+                ]
                 yield last_ipt
     
     def decode_step(self, 
@@ -252,3 +277,18 @@ class CPM2(Model):
             x = self.decoder_final_layer_nrom.forward(self.variable_allocator, x[:, :, cupy.newaxis])[:, :, 0]
             x = self.lm_head.forward(self.variable_allocator, x)
             return x
+    
+    def text_to_id(self, sentence):
+        return self.tokenizer.encode(sentence)
+
+    def id_to_text(self, idx : List[int]):
+        return self.tokenizer.decode(idx)
+    
+    def get_token_id(self, token : str, use_unk : bool = True) -> Union[int, None]:
+        if use_unk:
+            return self.tokenizer.encoder.get(token, self.tokenizer.unk_id)
+        else:
+            return self.tokenizer.encoder.get(token, None)
+    
+    def get_id_token(self, idx : int) -> str:
+        return self.tokenizer.decoder[idx]

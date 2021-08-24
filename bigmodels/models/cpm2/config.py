@@ -1,4 +1,4 @@
-from .base import Configuration
+from ..base import Configuration
 
 class CPM2Configuration(Configuration):
     DIM_MODEL = 4096
@@ -21,4 +21,4 @@ class CPM2Configuration(Configuration):
     
     DYNAMIC_MEMORY = 1024 * 1024 * 512 # memory size for non-parameter variables
 
-    MODEL_PATH = "./checkpoint.pt"
+    MODEL_NAME = "cpm2"

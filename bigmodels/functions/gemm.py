@@ -2,11 +2,10 @@ from ..backend import cublas
 import cupy
 import logging
 from ..scalar import get_scalar_ptr
+from ..utils import round_up
 
 logger = logging.getLogger(__name__)
 
-def round_up(x, d):
-    return (x + d - 1) // d * d
 
 def round_matrix(x):
     m, n = x.shape
@@ -84,24 +83,23 @@ def _igemm(a, aT, b, bT, out):
     ldc = m
 
     if m % 8 != 0:
-        logger.warning("[WARN] gemm m % 8 != 0")
+        logger.warning("[WARN] igemm m % 8 != 0")
     if k % 8 != 0:
-        logger.warning("[WARN] gemm k % 8 != 0")
+        logger.warning("[WARN] igemm k % 8 != 0")
     if not (bT or n % 8 == 0):
-        logger.warning("[WARN] gemm n % 8 != 0 and bT == False")
+        logger.warning("[WARN] igemm n % 8 != 0 and bT == False")
     if a.data.ptr % 16 != 0:
-        logger.warning("[WARN] gemm intptr_t(A) % 16 != 0")
+        logger.warning("[WARN] igemm intptr_t(A) % 16 != 0")
     if b.data.ptr % 16 != 0:
-        logger.warning("[WARN] gemm intptr_t(B) % 16 != 0")
+        logger.warning("[WARN] igemm intptr_t(B) % 16 != 0")
     if out.data.ptr % 16 != 0:
-        logger.warning("[WARN] gemm intptr_t(C) % 16 != 0")
+        logger.warning("[WARN] igemm intptr_t(C) % 16 != 0")
     if lda % 16 != 0:
-        logger.warning("[WARN] gemm lda % 16 != 0")
+        logger.warning("[WARN] igemm lda % 16 != 0")
     if ldb % 16 != 0:
-        logger.warning("[WARN] gemm ldb % 16 != 0")
+        logger.warning("[WARN] igemm ldb % 16 != 0")
     if ldc % 16 != 0:
-        logger.warning("[WARN] gemm ldc % 16 != 0")
-
+        logger.warning("[WARN] igemm ldc % 16 != 0")
     cublas.gemmEx(
         device.cublas_handle, 
         transA,
