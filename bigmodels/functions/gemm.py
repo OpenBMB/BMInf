@@ -1,5 +1,6 @@
 from ..backend import cublas
 import cupy
+import numpy as np
 import logging
 from ..scalar import get_scalar_ptr
 from ..utils import round_up
@@ -198,19 +199,21 @@ def sgemmBatched(a, aT, b, bT, out):
     if (ldc * itemsize) % 16 != 0 and ldc > 1:
         logger.warning("[WARN] gemm ldc % 16 != 0")
 
+    one = np.array(1, dtype=np.float32)
+    zero = np.array(0, dtype=np.float32)
     cublas.sgemmStridedBatched(
         device.cublas_handle, 
         transA,
         transB,
         m, n, k,
-        cupy.float32(1.0),
+        one.ctypes.data,
         a.data.ptr,
         lda,
         stride_a,
         b.data.ptr,
         ldb,
         stride_b,
-        cupy.float32(0.0),
+        zero.ctypes.data,
         out.data.ptr,
         ldc,
         stride_c,
