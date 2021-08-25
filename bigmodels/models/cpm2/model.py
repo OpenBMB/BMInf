@@ -285,10 +285,11 @@ class CPM2(Model):
         return self.tokenizer.decode(idx)
     
     def get_token_id(self, token : str, use_unk : bool = True) -> Union[int, None]:
+        token = token.translate(self.tokenizer.translator_enc)
         if use_unk:
             return self.tokenizer.encoder.get(token, self.tokenizer.unk_id)
         else:
             return self.tokenizer.encoder.get(token, None)
     
     def get_id_token(self, idx : int) -> str:
-        return self.tokenizer.decoder[idx]
+        return self.tokenizer.decoder[idx].translate(self.tokenizer.translator_dec)
