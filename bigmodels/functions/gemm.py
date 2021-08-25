@@ -44,7 +44,10 @@ def _igemm(a, aT, b, bT, out):
     assert out._c_contiguous
     assert a.device == b.device
     assert b.device == out.device
-    
+    device = a.device
+    cublas_version = cublas.getVersion(device.cublas_handle)
+
+
     if aT:
         k1, m = a.shape
         transA = cublas.CUBLAS_OP_N
@@ -68,16 +71,14 @@ def _igemm(a, aT, b, bT, out):
     else:
         raise TypeError("Unknown type %s for gemm" % a.dtype)
     
-    if out.dtype == cupy.float32:
-        type_out = cupy.cuda.runtime.CUDA_R_32F
-        ct = cublas.CUBLAS_COMPUTE_32F
-    elif out.dtype == cupy.int32:
-        type_out = 10
-        ct = cublas.CUBLAS_COMPUTE_32I
+    if out.dtype == cupy.int32:
+        type_out = 10   # CUDA_R_32I
+        if cublas_version >= 11000:
+            ct = cublas.CUBLAS_COMPUTE_32I
+        else:
+            ct = 10
     else:
         raise TypeError("Unknown type %s for gemm" % out.dtype)
-
-    device = a.device
 
     lda = m if aT else k
     ldb = k if bT else n
@@ -101,6 +102,8 @@ def _igemm(a, aT, b, bT, out):
         logger.warning("[WARN] igemm ldb % 16 != 0")
     if ldc % 16 != 0:
         logger.warning("[WARN] igemm ldc % 16 != 0")
+    
+
     cublas.gemmEx(
         device.cublas_handle, 
         transA,
