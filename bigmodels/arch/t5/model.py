@@ -25,10 +25,12 @@ class T5(Model):
         logger.info("Building model")
 
         self.memory_overlap = config.MEMORY_OVERLAP
+        max_overlap_layers = max(config.NUM_ENCODER_LAYERS, config.NUM_DECODER_LAYERS)
         if self.memory_overlap:
-            self.overlap_layers = config.OVERLAP_LAYERS
+            self.overlap_layers = min(config.OVERLAP_LAYERS, max_overlap_layers)
         else:
-            self.overlap_layers = max(config.NUM_ENCODER_LAYERS, config.NUM_DECODER_LAYERS)
+            self.overlap_layers = max_overlap_layers
+
         self.encoder_only = config.ENCODER_ONLY
         self.max_decoder_length = config.MAX_DECODER_LENGTH
 
