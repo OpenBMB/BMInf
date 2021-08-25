@@ -1,1 +1,1 @@
-from .cpm2 import *
+from .cpm2 import CPM2, CPM2Configuration

@@ -70,7 +70,7 @@ def read_vocab(path):
             ret[word] = len(ret)
     return ret
 
-class CPM2Tokenizer(object):
+class T5Tokenizer(object):
 
     def __init__(self, vocab_path, max_len=None, max_sentinels=190):
         self.max_len = max_len if max_len is not None else int(1e12)

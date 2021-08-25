@@ -9,8 +9,8 @@ from ...layers.layer_norm import LayerNorm
 from ...layers.mask import InputMask
 from ...layers.lm_head import LMHead
 from ...layers.layer_list import LayerList
-from .config import CPM2Configuration
-from .tokenizer import CPM2Tokenizer
+from .config import T5Configuration
+from .tokenizer import T5Tokenizer
 from ...allocator import ReusedAllocator, SizeLimitedAllocator
 import numpy as np
 import logging
@@ -19,11 +19,8 @@ from ...utils import round_up
 
 logger = logging.getLogger(__name__)
 
-class CPM2(Model):
-    def __init__(self, config : CPM2Configuration = None):
-        if config is None:
-            config = CPM2Configuration()
-
+class T5(Model):
+    def __init__(self, config : T5Configuration):
         # Build Model
         logger.info("Building model")
 
@@ -65,9 +62,9 @@ class CPM2(Model):
             model_path = data.ensure_file(config.MODEL_NAME, "checkpoint.pt")
             vocab_path = data.ensure_file(config.MODEL_NAME, "vocab.txt")
 
-            self.tokenizer = CPM2Tokenizer(vocab_path)
+            self.tokenizer = T5Tokenizer(vocab_path)
 
-            self.device = cupy.cuda.Device(config.DEVICE)
+            self.device = config.DEVICE
             with self.device:
                 logger.info("Start loading parameters from disk to cpu")
                 self.load( open(model_path, "rb") )
@@ -175,7 +172,7 @@ class CPM2(Model):
                     olp_allocator = self.overlap_allocator[overlap_idx]
                     olp_allocator.reset()
                     load_stream.wait_event(calc_event)
-                    for j in range(i + 1, min(i + self.overlap_layers, self.num_encoder) + 1):
+                    for j in range(i + 1, min(i + self.overlap_layers + 1, self.num_encoder)):
                         logger.info("Load encoder layer %d", j)
                         self.encoder[j].to_device(olp_allocator, load_stream)
                     
@@ -186,7 +183,7 @@ class CPM2(Model):
 
     def decode(self, hidden_state, input_length, sampler : Union[str, Callable[[cupy.ndarray], int] ] = "random") -> Generator[int, None, None]:
         if self.encoder_only:
-            raise ValueError("CPM2-encoder only")
+            raise ValueError("T5-encoder only")
 
         if isinstance(sampler, str):
             if sampler == "greedy":
@@ -268,7 +265,7 @@ class CPM2(Model):
                     olp_allocator = self.overlap_allocator[overlap_idx]
                     olp_allocator.reset()
                     load_stream.wait_event(calc_event)
-                    for j in range(i + 1, min(i + self.overlap_layers, self.num_decoder) + 1):
+                    for j in range(i + 1, min(i + self.overlap_layers + 1, self.num_decoder)):
                         logger.info("Load decoder layer %d", j)
                         self.decoder[j].to_device(olp_allocator, load_stream)
                     
