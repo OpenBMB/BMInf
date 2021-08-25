@@ -13,11 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from collections import OrderedDict
-import jieba
-import os
-jieba.dt.tmp_dir = os.path.expanduser("~/.cache/jieba")
-jieba.setLogLevel(20)
-jieba.initialize()
+from ...utils import jieba
 
 class WordpieceTokenizer(object):
 
