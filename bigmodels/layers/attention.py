@@ -119,7 +119,6 @@ class SelfAttention(Layer):
 
             # (s_k, s_q)T @ (dim_qkv，s_k)T = (s_q, dim_qkv)
             sgemmBatched(attn, True, val, True, out=out_raw[i])
-        
         assert out_raw._c_contiguous
         # reshape
         out = cupy.ndarray((batch_size, self.num_heads * self.dim_qkv, seq_len), dtype=cupy.float32, memptr=out_raw.data)
@@ -197,30 +196,30 @@ class PartialAttention(Layer):
 
 
         # (batch, dim_model), (batch, 1)
-        value, scale = self.quantize(allocator, curr_hidden_state[:, :, cupy.newaxis], axis=1) 
+        value, scale = self.quantize(allocator, curr_hidden_state[:, :], axis=1) 
         
         # FIXME: cupy cublasGemmStridedBatchedEx
         if self.is_self_attn:
             qkv_i32 = allocator.alloc_array((batch_size, 3 * self.num_heads * self.dim_qkv, 1), dtype=cupy.int32)
         else:
             qkv_i32 = allocator.alloc_array((batch_size, self.num_heads * self.dim_qkv, 1), dtype=cupy.int32)
-        for i in range(batch_size):
-            if self.is_self_attn:
-                igemm(
-                    value[i],
-                    True,
-                    self.w_project_qkv.value,
-                    True,
-                    qkv_i32[i]
-                )
-            else:
-                igemm(
-                    value[i],
-                    True,
-                    self.w_project_q.value,
-                    True,
-                    qkv_i32[i]
-                )
+        
+        if self.is_self_attn:
+            igemm(
+                self.w_project_qkv.value,
+                False,
+                value,
+                True,
+                qkv_i32[:, :, 0]
+            )
+        else:
+            igemm(
+                self.w_project_q.value,
+                False,
+                value,
+                True,
+                qkv_i32[:, :, 0]
+            )
         # release value
         del value
 
@@ -294,7 +293,7 @@ class PartialAttention(Layer):
             sgemmBatched(attn, True, val, True, out=out_raw[i])
         assert out_raw._c_contiguous
 
-        out = cupy.ndarray((batch_size, self.num_heads * self.dim_qkv, 1), dtype=cupy.float32, memptr=out_raw.data)
+        out = cupy.ndarray((batch_size, self.num_heads * self.dim_qkv), dtype=cupy.float32, memptr=out_raw.data)
         del attention_score
         del out_raw
 
@@ -302,8 +301,14 @@ class PartialAttention(Layer):
         out_i8, scale = self.quantize(allocator, out, axis=1) 
 
         project_out_i32 = allocator.alloc_array((batch_size, dim_model, 1), dtype=cupy.int32)
-        for i in range(batch_size):
-            igemm(out_i8[i], True, self.w_out.value, True, out=project_out_i32[i])
+
+        igemm(
+            self.w_out.value, 
+            False, 
+            out_i8, 
+            True, 
+            out=project_out_i32[:, :, 0]
+        )
         
         assert project_out_i32._c_contiguous
         
