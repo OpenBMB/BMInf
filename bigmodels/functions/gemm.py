@@ -2,12 +2,9 @@ from ..backend import cublas
 import cupy
 import numpy as np
 import logging
-from ..scalar import get_scalar_ptr
 from ..utils import round_up
 
 logger = logging.getLogger(__name__)
-one = np.array(1, dtype=np.float32)
-zero = np.array(0, dtype=np.float32)
 
 def round_matrix(x):
     m, n = x.shape
@@ -18,6 +15,7 @@ def round_matrix(x):
     
     nw_x = cupy.zeros( (round_m, round_n), dtype=x.dtype )
     nw_x[:m, :n] = x
+    logger.info("Round matrix (%d, %d) -> (%d, %d)", m, n, round_m, round_n)
     return nw_x
 
 def igemm(a, aT, b, bT, out):
@@ -104,20 +102,21 @@ def _igemm(a, aT, b, bT, out):
     if ldc % 16 != 0:
         logger.warning("[WARN] igemm ldc % 16 != 0")
     
-
+    one = np.array(1, dtype=np.int32)
+    zero = np.array(0, dtype=np.int32)
     cublas.gemmEx(
         device.cublas_handle, 
         transA,
         transB,
         m, n, k,
-        get_scalar_ptr(1),
+        one.ctypes.data,
         a.data.ptr,
         type_in,
         lda,
         b.data.ptr,
         type_in,
         ldb,
-        get_scalar_ptr(0),
+        zero.ctypes.data,
         out.data.ptr,
         type_out,
         ldc,
@@ -203,6 +202,8 @@ def sgemmBatched(a, aT, b, bT, out):
     if (ldc * itemsize) % 16 != 0 and ldc > 1:
         logger.warning("[WARN] gemm ldc % 16 != 0")
 
+    one = np.array(1, dtype=np.float32)
+    zero = np.array(0, dtype=np.float32)
     cublas.sgemmStridedBatched(
         device.cublas_handle, 
         transA,
