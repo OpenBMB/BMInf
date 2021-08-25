@@ -2,42 +2,23 @@
 
 ## 安装方法
 
-### 1. 安装依赖
-
 ```
-pip install -r requirements.txt
+python3 setup.py install
 ```
 
-### 2. 根据cuda版本安装cupy
+## 使用配置
 
-#### CUDA 10.1
+### 最低配置
 
-```
-pip install cupy-cuda101
-```
+* 内存: 16GB
+* 显存: 6GB
+* GPU: GTX 1060
+* PCI-E 3.0 x16
 
-#### CUDA 10.2
+### 推荐配置
 
-```
-pip install cupy-cuda102
-```
-
-### CUDA 11.1
-
-```
-pip install cupy-cuda111
-```
-
-### CUDA 11.2
-
-```
-pip install cupy-cuda112
-```
-
-### CUDA 11.3
-
-```
-pip install cupy-cuda113
-```
-
+* 内存: 24GB
+* 显存: 12GB
+* GPU: GTX 2080 Ti
+* PCI-E 3.0 x16
 
