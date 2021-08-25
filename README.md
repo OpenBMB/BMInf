@@ -2,8 +2,14 @@
 
 ## 安装方法
 
+### 1. 本地安装
 ```
 python3 setup.py install
+```
+
+### 2. docker
+```
+docker build . -f docker/base.Dockerfile
 ```
 
 ## 使用配置

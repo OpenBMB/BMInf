@@ -28,6 +28,10 @@ def lookup_cublas_dll():
     return lookup_dll(cublas_lib_name)
 
 def get_cuda_version():
+    env_version = os.environ.get("CUDA_VERSION", None)
+    if env_version is not None:
+        return int(env_version)
+
     if sys.platform.startswith("win"):
         dll_path = lookup_cuda_dll()
         if dll_path is None:
