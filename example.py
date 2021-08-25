@@ -1,8 +1,5 @@
-import logging
-import sys
 import numpy as np
 import bigmodels
-import time
 from tqdm import tqdm
 
 def generate_span(model : bigmodels.models.CPM2, sentence):
