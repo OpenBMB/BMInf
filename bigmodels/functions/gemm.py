@@ -6,7 +6,8 @@ from ..scalar import get_scalar_ptr
 from ..utils import round_up
 
 logger = logging.getLogger(__name__)
-
+one = np.array(1, dtype=np.float32)
+zero = np.array(0, dtype=np.float32)
 
 def round_matrix(x):
     m, n = x.shape
@@ -202,8 +203,6 @@ def sgemmBatched(a, aT, b, bT, out):
     if (ldc * itemsize) % 16 != 0 and ldc > 1:
         logger.warning("[WARN] gemm ldc % 16 != 0")
 
-    one = np.array(1, dtype=np.float32)
-    zero = np.array(0, dtype=np.float32)
     cublas.sgemmStridedBatched(
         device.cublas_handle, 
         transA,
