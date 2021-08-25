@@ -45,7 +45,7 @@ class SelfAttention(Layer):
         assert attention_mask.shape == (batch_size, seq_len, seq_len)
         if self_attn_position_bias is not None:
             assert self_attn_position_bias.dtype == cupy.float16
-            assert self_attn_position_bias.shape == (batch_size, self.num_heads, seq_len, seq_len)
+            assert self_attn_position_bias.shape[1:] == (self.num_heads, seq_len, seq_len)
 
         # (batch_size, dim_in, seq_len), (batch_size, 1, seq_len)
         value, scale = self.quantize(allocator, hidden_state, axis=1) 
