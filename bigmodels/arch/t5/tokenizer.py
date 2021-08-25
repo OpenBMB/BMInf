@@ -15,7 +15,7 @@
 from collections import OrderedDict
 import jieba
 import os
-jieba.dt.tmp_dir = os.expanduser("~/.cache/jieba")
+jieba.dt.tmp_dir = os.path.expanduser("~/.cache/jieba")
 jieba.setLogLevel(20)
 jieba.initialize()
 
