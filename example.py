@@ -9,37 +9,37 @@ def generate_span(model : bigmodels.models.CPM2, sentence):
     input_length = [len(idx[0])]
 
     hidden_state = model.encode(np.array(idx, dtype=np.int64), input_length)
-    
-    tokens = []
     begin_token = model.get_token_id("<s_0>")
     end_token = model.get_token_id("<s_1>")
     record = False
 
+    first_token = True
     for token_id in model.decode( hidden_state, input_length, sampler="greedy"):
         token_id = token_id[0]
-
+        if first_token:
+            if token_id != begin_token:
+                raise RuntimeError("Decoder error")
+            first_token = False
         if token_id == begin_token:
             record = True
         elif token_id == end_token:
             break
         elif record:
-            tokens.append(token_id)
-        if len(tokens) > 10:
-            break
-    return model.id_to_text(tokens)
+            yield model.get_id_token(token_id) 
 
 def generate(model : bigmodels.models.CPM2, sentence):
     with tqdm() as progress_bar:
         progress_bar.write(sentence)
         while True:
-            span = generate_span(model, sentence)
-            sentence += span
-            progress_bar.write(sentence)
-            progress_bar.update(1)
-            if span.find( "<eod>") != -1:
-                break
+            for token in generate_span(model, sentence):
+                sentence += token
+                progress_bar.write(sentence)
+                progress_bar.update(1)
+            
+                if token.find( "<eod>") != -1:
+                    break
 
-input_text = """问题：游戏《绝地求生》中有哪些鲜为人知的技巧？\n描述：\n"""
+input_text = """7月底，四川此轮疫情中与天府机场相关的本土病例曾引发广泛关注。媒体"""
 
 def main():
     print("Loading model")
