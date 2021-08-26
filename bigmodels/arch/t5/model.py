@@ -181,13 +181,14 @@ class T5(Model):
                 if i % self.overlap_layers == 0:
                     calc_stream.wait_event(load_event)
                 logger.info("Calc encoder layer %d", i)
-                x = self.encoder[i].forward(
-                    self.variable_allocator, 
-                    x,
-                    encoder_attn_mask,
-                    x_pos,
-                    True
-                )
+                with calc_stream:
+                    x = self.encoder[i].forward(
+                        self.variable_allocator, 
+                        x,
+                        encoder_attn_mask,
+                        x_pos,
+                        True
+                    )
                 if i % self.overlap_layers == self.overlap_layers - 1 and i + 1 < self.num_encoder:
                     overlap_idx = ((i + 1) // self.overlap_layers) % 2
                     olp_allocator = self.overlap_allocator[overlap_idx]
@@ -271,17 +272,17 @@ class T5(Model):
                 if i % self.overlap_layers == 0:
                     calc_stream.wait_event(load_event)
                 logger.info("Calc decoder layer %d", i)
-
-                x = self.decoder[i].forward(
-                    self.variable_allocator,
-                    x,                          # (batch, dim_model)
-                    past_kv[i],                 # (batch, 2, num_heads, dim_kv, max_decoder_length)
-                    step_pos,                   # 1
-                    encoder_mask,               # (batch, seq_ipt_len)
-                    encoder_layers_kv[:, i],    # (batch, 2, num_heads, dim_kv, seq_ipt_len)
-                    dec_position_bias,          # (1, num_heads, max_decoder_length, max_decoder_length)
-                    True
-                )
+                with calc_stream:
+                    x = self.decoder[i].forward(
+                        self.variable_allocator,
+                        x,                          # (batch, dim_model)
+                        past_kv[i],                 # (batch, 2, num_heads, dim_kv, max_decoder_length)
+                        step_pos,                   # 1
+                        encoder_mask,               # (batch, seq_ipt_len)
+                        encoder_layers_kv[:, i],    # (batch, 2, num_heads, dim_kv, seq_ipt_len)
+                        dec_position_bias,          # (1, num_heads, max_decoder_length, max_decoder_length)
+                        True
+                    )
                 if i % self.overlap_layers == self.overlap_layers - 1 and i + 1 < self.num_decoder:
                     overlap_idx = ((i + 1) // self.overlap_layers) % 2
                     olp_allocator = self.overlap_allocator[overlap_idx]
