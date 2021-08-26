@@ -87,7 +87,7 @@ class T5(Model):
 
                     logger.info("Using overlap loader: overlap_size %d, other_size: %d, dynamic_memory %d, memory_limit %d", overlap_size, other_size, config.DYNAMIC_MEMORY, config.MEMORY_LIMIT)
                     if overlap_size + other_size + config.DYNAMIC_MEMORY > config.MEMORY_LIMIT:
-                        raise ValueError("memory limit not enough, at least %d bytes, bug got %d bytes" % (overlap_size + other_size + config.DYNAMIC_MEMORY, config.MEMORY_LIMIT))
+                        raise ValueError("memory limit not enough, at least %d bytes, but got %d bytes" % (overlap_size + other_size + config.DYNAMIC_MEMORY, config.MEMORY_LIMIT))
                     self.parameter_allocator = ReusedAllocator(other_size + (overlap_size // 2))
                     self.overlap_allocator = [ReusedAllocator(overlap_size // 4), ReusedAllocator(overlap_size // 4)]
 
@@ -103,8 +103,8 @@ class T5(Model):
                         else:
                             layer.to_device( self.parameter_allocator, load_stream  )
                 else:
-                    if self.nbytes + config.DYNAMIC_MEMORY < config.MEMORY_LIMIT:
-                        raise ValueError("memory limit not enough, at least %d bytes, bug got %d bytes" % (self.nbytes + config.DYNAMIC_MEMORY, config.MEMORY_LIMIT))
+                    if self.nbytes + config.DYNAMIC_MEMORY > config.MEMORY_LIMIT:
+                        raise ValueError("memory limit not enough, at least %d bytes, but got %d bytes" % (self.nbytes + config.DYNAMIC_MEMORY, config.MEMORY_LIMIT))
                     
                     logger.info("Using static loader: total: %d, dynamic_memory %d, memory_limit %d", self.nbytes, config.DYNAMIC_MEMORY, config.MEMORY_LIMIT)
                     self.parameter_allocator = ReusedAllocator(self.nbytes)
