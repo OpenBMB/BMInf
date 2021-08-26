@@ -23,16 +23,22 @@ class T5(Model):
     def __init__(self, config : T5Configuration):
         # Build Model
         logger.info("Building model")
-
+        
         self.memory_overlap = config.MEMORY_OVERLAP
-        max_overlap_layers = max(config.NUM_ENCODER_LAYERS, config.NUM_DECODER_LAYERS)
+        self.max_overlap_layers = max(config.NUM_ENCODER_LAYERS, config.NUM_DECODER_LAYERS)
         if self.memory_overlap:
-            self.overlap_layers = min(config.OVERLAP_LAYERS, max_overlap_layers)
+            self.overlap_layers = min(config.OVERLAP_LAYERS, self.max_overlap_layers)
         else:
-            self.overlap_layers = max_overlap_layers
+            self.overlap_layers = self.max_overlap_layers
 
         self.encoder_only = config.ENCODER_ONLY
         self.max_decoder_length = config.MAX_DECODER_LENGTH
+
+        logger.info("============ T5 ==============")
+        logger.info("MEM_OVERLAP: %s", self.memory_overlap)
+        logger.info("OVERLAP_LAYERS: %s", self.overlap_layers)
+        logger.info("ENCODER_ONLY: %s", self.encoder_only)
+        logger.info("MAX_DECODER_LENGTH: %s", self.max_decoder_length)
 
         self.input_embedding = Embedding(config.VOCAB_SIZE, config.DIM_MODEL)
         self.input_mask = InputMask(is_decoder=False)
@@ -74,7 +80,6 @@ class T5(Model):
                 logger.info("Start loading parameters from cpu to gpu")
                 
                 load_stream = cupy.cuda.Stream()
-                
                 if self.memory_overlap:
                     mx_size = 0
                     for i in range(config.NUM_ENCODER_LAYERS):
@@ -82,17 +87,31 @@ class T5(Model):
                     for i in range(config.NUM_DECODER_LAYERS):
                         mx_size = max(self.decoder[i].nbytes, mx_size)
 
-                    overlap_size = mx_size * self.overlap_layers * 4
+                    if self.overlap_layers >= self.max_overlap_layers:
+                        overlap_size = mx_size * self.max_overlap_layers * 2
+                    elif self.overlap_layers * 2 >= self.max_overlap_layers:
+                        overlap_size = mx_size * self.overlap_layers * 2 + (self.max_overlap_layers - self.overlap_layers) * mx_size
+                    elif self.overlap_layers * 3 >= self.max_overlap_layers:
+                        overlap_size = mx_size * self.overlap_layers * 3 + (self.max_overlap_layers - self.overlap_layers * 2) * mx_size
+                    else:
+                        overlap_size = mx_size * self.overlap_layers * 4
+
                     other_size = self.nbytes - self.encoder.nbytes - self.decoder.nbytes
 
                     logger.info("Using overlap loader: overlap_size %d, other_size: %d, dynamic_memory %d, memory_limit %d", overlap_size, other_size, config.DYNAMIC_MEMORY, config.MEMORY_LIMIT)
                     if overlap_size + other_size + config.DYNAMIC_MEMORY > config.MEMORY_LIMIT:
                         raise ValueError("memory limit not enough, at least %d bytes, but got %d bytes" % (overlap_size + other_size + config.DYNAMIC_MEMORY, config.MEMORY_LIMIT))
-                    self.parameter_allocator = ReusedAllocator(other_size + (overlap_size // 2))
-                    self.overlap_allocator = [ReusedAllocator(overlap_size // 4), ReusedAllocator(overlap_size // 4)]
+                    self.parameter_allocator = ReusedAllocator(other_size + (mx_size * self.overlap_layers * 2))
 
+                    if self.overlap_layers >= self.max_overlap_layers:
+                        self.overlap_allocator = [None, None]
+                    elif self.overlap_layers * 2 >= self.max_overlap_layers:
+                        self.overlap_allocator = [None, ReusedAllocator( (self.max_overlap_layers - self.overlap_layers) * mx_size )]
+                    elif self.overlap_layers * 3 >= self.max_overlap_layers:
+                        self.overlap_allocator = [ReusedAllocator( (self.max_overlap_layers - self.overlap_layers * 2) * mx_size ), ReusedAllocator( self.overlap_layers * mx_size )]
+                    else:
+                        self.overlap_allocator = [ReusedAllocator( self.overlap_layers * mx_size ), ReusedAllocator( self.overlap_layers * mx_size )]
                     self.variable_allocator = SizeLimitedAllocator(config.MEMORY_LIMIT - other_size - overlap_size)
-
                     self.variable_allocator.alloc(config.DYNAMIC_MEMORY) # preallocate
 
                     for name, layer in self._sub_layers.items():

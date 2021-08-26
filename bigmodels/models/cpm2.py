@@ -1,6 +1,9 @@
 from typing import Optional, Union
 from ..arch.t5 import T5Configuration, T5
 import cupy
+import logging
+logger = logging.getLogger(__name__)
+
 
 class CPM2Configuration(T5Configuration):
     MODEL_NAME = "cpm2"
@@ -26,14 +29,20 @@ class CPM2(T5):
                 memory_limit = config.DEVICE.mem_info[0] - 100 * 1024 * 1024
             config.MEMORY_LIMIT = memory_limit
         
-        if config.MEMORY_OVERLAP is None:
-            config.MEMORY_OVERLAP = (config.MEMORY_LIMIT < 12 * 1024 * 1024)    # < 12GB
-
         if config.MEMORY_OVERLAP:
             if config.OVERLAP_LAYERS is None:
-                max_layers = (config.MEMORY_LIMIT - config.DYNAMIC_MEMORY - 1235640320) // (226615296 * 4)
-                if max_layers < 1:
-                    raise RuntimeError("GPU memory is not enough")
-                config.OVERLAP_LAYERS = max_layers
-        
+                max_overlap = max(config.NUM_ENCODER_LAYERS, config.NUM_DECODER_LAYERS)
+                max_layers = (config.MEMORY_LIMIT - config.DYNAMIC_MEMORY - 1235640320) // 226615296
+
+                logger.info("Auto overlap layers: (max_layers: %d, max_overlap: %d)", max_layers, max_overlap)
+                if max_layers * 3 < max_overlap * 4:
+                    config.OVERLAP_LAYERS = max_layers // 4
+                elif max_layers < max_overlap * 2:
+                    config.OVERLAP_LAYERS = max_layers - max_overlap
+                else:
+                    config.OVERLAP_LAYERS = max_overlap
+                logger.info("Auto overlap layers: result %d", config.OVERLAP_LAYERS)
+                if config.OVERLAP_LAYERS < 1:
+                    raise ValueError("Memory is not enough")
+
         super().__init__(config)

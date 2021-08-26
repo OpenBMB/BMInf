@@ -1,6 +1,7 @@
 import numpy as np
 import bigmodels
 from tqdm import tqdm
+import logging
 
 def generate_span(model : bigmodels.models.CPM2, sentence):
     idx = [model.text_to_id(sentence) + [ model.get_token_id("<s_0>") ]]
