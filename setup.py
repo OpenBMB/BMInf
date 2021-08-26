@@ -95,10 +95,13 @@ def main():
     version = get_version()
     open( os.path.join(path, CONFIG["package_name"], "version.py"), "w", encoding="utf-8" ).write('__version__ = "%s"' % version)
 
-    check_cublas()
+    requires = get_requirements(path)
 
-    cuda_version = get_cuda_version()
-    cupy_version = "cupy-cuda%d>=8,<10" % cuda_version
+    if os.environ.get("BM_BUILD", None) is not None:
+        check_cublas()
+        cuda_version = get_cuda_version()
+        cupy_version = "cupy-cuda%d>=8,<10" % cuda_version
+        requires = requires + [cupy_version]
 
     setuptools.setup(
         name=CONFIG["package_name"],
@@ -115,7 +118,8 @@ def main():
             "Programming Language :: C++"
         ],
         python_requires=">=3.6",
-        install_requires=get_requirements(path) + [cupy_version],
+        setup_requires=["wheel"],
+        install_requires= requires,
     )
 
 if __name__ == "__main__":
