@@ -83,6 +83,8 @@ def get_requirements(path):
 def get_version():
     if "version" in CONFIG and CONFIG["version"] is not None:
         return CONFIG["version"]
+    if "BM_VERSION" in os.environ:
+        return os.environ["BM_VERSION"]
     if "CI_COMMIT_TAG" in os.environ:
         return os.environ["CI_COMMIT_TAG"]
     if "CI_COMMIT_SHA" in os.environ:
@@ -97,7 +99,7 @@ def main():
 
     requires = get_requirements(path)
 
-    if os.environ.get("BM_BUILD", None) is not None:
+    if os.environ.get("BM_BUILD", None) is None:
         check_cublas()
         cuda_version = get_cuda_version()
         cupy_version = "cupy-cuda%d>=8,<10" % cuda_version

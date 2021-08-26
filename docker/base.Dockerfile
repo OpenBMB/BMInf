@@ -7,6 +7,8 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 RUN pip3 install setuptools
 ADD . .
+ARG BM_VERSION=dev
+ENV BM_VERSION $BM_VERSION
 RUN python3 setup.py sdist --formats=gztar
 RUN pip3 install ./dist/*.tar.gz
 WORKDIR /root
