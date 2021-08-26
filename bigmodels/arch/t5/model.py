@@ -153,7 +153,7 @@ class T5(Model):
     def encode(self, input_idx : np.ndarray, input_length : List[int]):
         with self.device:
             load_stream = self.load_stream
-            calc_stream = cupy.cuda.get_current_stream()
+            calc_stream = cupy.cuda.Stream()
             load_event = load_stream.record()
             calc_event = calc_stream.record()
 
@@ -200,6 +200,7 @@ class T5(Model):
                     calc_event = calc_stream.record()
                     load_event = load_stream.record()
             x = self.encoder_final_layer_nrom.forward(self.variable_allocator, x)
+            calc_stream.synchronize()
             return x    # (batch, dim_model, seq_len)
 
     def decode(self, hidden_state, input_length, sampler : Union[str, Callable[[cupy.ndarray], int] ] = "random") -> Generator[int, None, None]:
@@ -261,7 +262,7 @@ class T5(Model):
         ):
         with self.device:
             load_stream = self.load_stream
-            calc_stream = cupy.cuda.get_current_stream()
+            calc_stream = cupy.cuda.Stream()
             load_event = load_stream.record()
             calc_event = calc_stream.record()
 
@@ -294,6 +295,7 @@ class T5(Model):
                     load_event = load_stream.record()
             x = self.decoder_final_layer_nrom.forward(self.variable_allocator, x[:, :, cupy.newaxis])[:, :, 0]
             x = self.lm_head.forward(self.variable_allocator, x)
+            calc_stream.synchronize()
             return x
     
     def text_to_id(self, sentence):
