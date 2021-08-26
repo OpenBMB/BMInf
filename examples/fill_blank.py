@@ -42,7 +42,7 @@ def generate_blank(model : bigmodels.models.CPM2, sentence : str):
     return [model.id_to_text(tokens) for tokens in blanks]
 
 def fill_blank(model : bigmodels.models.CPM2, sentence : str):
-    print("Input:", sentence.replace(TOKEN_BLANK,  "\033[4m    \033[0m") )
+    print("Input: ", sentence.replace(TOKEN_BLANK,  "\033[4m    \033[0m") )
     result = sentence
     for blank in generate_blank(model, sentence):
         result = result.replace(TOKEN_BLANK, "\033[0;32m" + blank + "\033[0m", 1)
