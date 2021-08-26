@@ -133,8 +133,7 @@ class T5(Model):
 
                     self.to_device(self.parameter_allocator, load_stream)
                 
-                self.load_stream = cupy.cuda.Stream(non_blocking=True)
-                self.calc_stream = cupy.cuda.Stream(non_blocking=True)
+                self.load_stream = cupy.cuda.Stream()
                 self.device.synchronize()
 
             logger.info("Cleaning useless parameters on cpu")
@@ -154,7 +153,7 @@ class T5(Model):
     def encode(self, input_idx : np.ndarray, input_length : List[int]):
         with self.device:
             load_stream = self.load_stream
-            calc_stream = self.calc_stream
+            calc_stream = cupy.cuda.Stream()
             load_event = load_stream.record()
             calc_event = calc_stream.record()
 
@@ -264,7 +263,7 @@ class T5(Model):
         ):
         with self.device:
             load_stream = self.load_stream
-            calc_stream = self.calc_stream
+            calc_stream = cupy.cuda.Stream()
             load_event = load_stream.record()
             calc_event = calc_stream.record()
 
