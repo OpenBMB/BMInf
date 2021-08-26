@@ -20,9 +20,12 @@ class CPM2(T5):
         if config.MEMORY_LIMIT is None:
             if memory_limit is None:
                 # free - 100MB
-                memory_limit = config.DEVICE.mem_info[0] - 100 * 1024 * 1024
+                memory_limit = config.DEVICE.mem_info[0] - 500 * 1024 * 1024
             config.MEMORY_LIMIT = memory_limit
         
+        if config.MEMORY_OVERLAP is None:
+            config.MEMORY_OVERLAP = (config.MEMORY_LIMIT < 12 * 1024 * 1024)    # < 12GB
+            
         if config.MEMORY_OVERLAP:
             if config.OVERLAP_LAYERS is None:
                 max_layers = (config.MEMORY_LIMIT - config.DYNAMIC_MEMORY - 1235640320) // (226615296 * 4)

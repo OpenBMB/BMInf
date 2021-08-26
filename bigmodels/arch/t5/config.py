@@ -16,7 +16,7 @@ class T5Configuration(Configuration):
     ENCODER_ONLY = False
     
     ## runtime
-    MEMORY_OVERLAP = True
+    MEMORY_OVERLAP = None
     DEVICE = None
     MEMORY_LIMIT = None
     OVERLAP_LAYERS = None
