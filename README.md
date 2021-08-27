@@ -24,7 +24,7 @@ docker build . -f docker/base.Dockerfile
 ### 推荐配置
 
 * 内存: 24GB
-* 显存: 12GB
-* GPU: GTX 2080 Ti
+* 显存: 16GB
+* GPU: NVIDIA Tesla V100
 * PCI-E 3.0 x16
 
