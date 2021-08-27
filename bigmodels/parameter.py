@@ -49,13 +49,13 @@ class Parameter:
             raise ValueError("Parameter dtype error")
         self.data = data
 
-    def to_device(self, allocator : Allocator):
+    def to_device(self, allocator : Allocator, load_stream):
         addr = allocator.alloc(self.nbytes)
 
         arr = np.frombuffer(self.data, self.__dtype)
         self.value = cupy.ndarray(self.shape, dtype=self.__dtype, memptr=addr, order='C')
 
-        cupy.cuda.runtime.memcpy( self.value.data.ptr, arr.ctypes.data, arr.nbytes, cupy.cuda.runtime.memcpyHostToDevice)
+        cupy.cuda.runtime.memcpyAsync( self.value.data.ptr, arr.ctypes.data, arr.nbytes, cupy.cuda.runtime.memcpyHostToDevice, load_stream.ptr)
     
     def _remove_data(self):
         self.data = None

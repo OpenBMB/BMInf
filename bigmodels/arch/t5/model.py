@@ -16,7 +16,6 @@ import numpy as np
 import logging
 from ... import data
 from ...utils import round_up
-import threading
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +79,7 @@ class T5(Model):
 
                 logger.info("Start loading parameters from cpu to gpu")
                 
+                load_stream = cupy.cuda.Stream()
                 if self.memory_overlap:
                     mx_size = 0
                     for i in range(config.NUM_ENCODER_LAYERS):
@@ -106,9 +106,9 @@ class T5(Model):
                     if self.overlap_layers >= self.max_overlap_layers:
                         self.overlap_allocator = [None, None]
                     elif self.overlap_layers * 2 >= self.max_overlap_layers:
-                        self.overlap_allocator = [ReusedAllocator( (self.max_overlap_layers - self.overlap_layers) * mx_size ), None]
+                        self.overlap_allocator = [None, ReusedAllocator( (self.max_overlap_layers - self.overlap_layers) * mx_size )]
                     elif self.overlap_layers * 3 >= self.max_overlap_layers:
-                        self.overlap_allocator = [ReusedAllocator( self.overlap_layers * mx_size ), ReusedAllocator( (self.max_overlap_layers - self.overlap_layers * 2) * mx_size )]
+                        self.overlap_allocator = [ReusedAllocator( (self.max_overlap_layers - self.overlap_layers * 2) * mx_size ), ReusedAllocator( self.overlap_layers * mx_size )]
                     else:
                         self.overlap_allocator = [ReusedAllocator( self.overlap_layers * mx_size ), ReusedAllocator( self.overlap_layers * mx_size )]
                     self.overlap_allocator_status = [None, None]
@@ -118,9 +118,9 @@ class T5(Model):
                         if name in ["encoder", "decoder"]:
                             # move first overlap_size layers to device
                             for i in range(min(self.overlap_layers, len(layer))):
-                                layer[i].to_device( self.parameter_allocator )
+                                layer[i].to_device( self.parameter_allocator, load_stream )
                         else:
-                            layer.to_device( self.parameter_allocator  )
+                            layer.to_device( self.parameter_allocator, load_stream  )
                 else:
                     if self.nbytes + config.DYNAMIC_MEMORY > config.MEMORY_LIMIT:
                         raise ValueError("memory limit not enough, at least %d bytes, but got %d bytes" % (self.nbytes + config.DYNAMIC_MEMORY, config.MEMORY_LIMIT))
@@ -129,9 +129,13 @@ class T5(Model):
                     self.parameter_allocator = ReusedAllocator(self.nbytes)
                     self.variable_allocator = SizeLimitedAllocator(config.MEMORY_LIMIT - self.nbytes)
 
-                    self.to_device(self.parameter_allocator)
-                with cupy.cuda.Stream.ptds:
+                    self.to_device(self.parameter_allocator, load_stream)
+                
+                self.load_stream = cupy.cuda.Stream()
+                self.calc_stream = cupy.cuda.Stream()
+                with self.calc_stream:
                     self.variable_allocator.alloc(config.DYNAMIC_MEMORY) # preallocate
+                self.device.synchronize()
 
             logger.info("Cleaning useless parameters on cpu")
             if self.memory_overlap:
@@ -146,71 +150,26 @@ class T5(Model):
                 self._remove_data()
             logger.info("End of model initialization")
 
-    def encoder_loader(self, barrier):
-        with self.device:
-            with cupy.cuda.Stream.ptds:
-                for i in range(self.num_encoder):
-                    if i % self.overlap_layers == 0:
-                        barrier.wait()
-                        # sync here
-
-                        if i + self.overlap_layers >= self.num_encoder:
-                            continue
-
-                        overlap_idx = (i // self.overlap_layers) % 2
-                        if self.overlap_allocator_status[overlap_idx] == i + 1:
-                            continue
-                            
-                        olp_allocator = self.overlap_allocator[overlap_idx]
-                        olp_allocator.reset()
-                        self.overlap_allocator_status[overlap_idx] = i + 1
-                        for j in range(i + self.overlap_layers, min(i + self.overlap_layers * 2, self.num_encoder)):
-                            logger.info("Load encoder layer %d", j)
-                            self.encoder[j].to_device(olp_allocator)
-    
-    def decoder_loader(self, barrier):
-        with self.device:
-            with cupy.cuda.Stream.ptds:
-                for i in range(self.num_decoder):
-                    if i % self.overlap_layers == 0:
-                        barrier.wait()
-                        # sync here
-
-                        if i + self.overlap_layers >= self.num_decoder:
-                            continue
-
-                        overlap_idx = (i // self.overlap_layers) % 2
-                        if self.overlap_allocator_status[overlap_idx] == - (i + 1):
-                            continue
-                            
-                        olp_allocator = self.overlap_allocator[overlap_idx]
-                        olp_allocator.reset()
-                        self.overlap_allocator_status[overlap_idx] = - (i + 1)
-                        for j in range(i + self.overlap_layers, min(i + self.overlap_layers * 2, self.num_decoder)):
-                            logger.info("Load encoder layer %d", j)
-                            self.decoder[j].to_device(olp_allocator)
-                    
 
     def encode(self, input_idx : np.ndarray, input_length : List[int]):
-        barrier = threading.Barrier(2)
-
-        loading_thread = threading.Thread(target=self.encoder_loader, args=(barrier,), daemon=True)
-        loading_thread.start()
-
         with self.device:
-            with cupy.cuda.Stream.ptds:
+            load_stream = self.load_stream
+            calc_stream = self.calc_stream
+            load_event = load_stream.record()
+            calc_event = calc_stream.record()
 
-                batch_size, seq_len = input_idx.shape
+            batch_size, seq_len = input_idx.shape
 
-                if seq_len % 16 != 0:
-                    nw_seq_len = round_up(seq_len, 16)  # round up
-                    nw_input_idx = np.zeros((batch_size, nw_seq_len), dtype=np.int64)
-                    nw_input_idx[:, :seq_len] = input_idx
-                    seq_len = nw_seq_len
-                    input_idx = nw_input_idx
-                    del nw_seq_len
-                    del nw_input_idx
+            if seq_len % 16 != 0:
+                nw_seq_len = round_up(seq_len, 16)  # round up
+                nw_input_idx = np.zeros((batch_size, nw_seq_len), dtype=np.int64)
+                nw_input_idx[:, :seq_len] = input_idx
+                seq_len = nw_seq_len
+                input_idx = nw_input_idx
+                del nw_seq_len
+                del nw_input_idx
 
+            with calc_stream:
                 x = self.input_embedding.forward(self.variable_allocator, input_idx)
                 encoder_attn_mask = self.input_mask.forward(self.variable_allocator, input_length, seq_len)
                 x = x.transpose((0, 2, 1))
@@ -220,12 +179,11 @@ class T5(Model):
                 assert x_pos.shape == (1, self.num_heads, seq_len, seq_len)
                 assert x_pos.dtype == cupy.float16
 
-                for i in range(self.num_encoder):
-                    if i % self.overlap_layers == 0:
-                        barrier.wait()
-                        barrier.reset()
-                        # sync
-                    logger.info("Calc encoder layer %d", i)
+            for i in range(self.num_encoder):
+                if i % self.overlap_layers == 0:
+                    calc_stream.wait_event(load_event)
+                logger.info("Calc encoder layer %d", i)
+                with calc_stream:
                     x = self.encoder[i].forward(
                         self.variable_allocator, 
                         x,
@@ -233,10 +191,26 @@ class T5(Model):
                         x_pos,
                         True
                     )
+                if i % self.overlap_layers == self.overlap_layers - 1 and i + 1 < self.num_encoder:
+                    overlap_idx = ((i + 1) // self.overlap_layers) % 2
+                    if self.overlap_allocator_status[overlap_idx] == i + 1:
+                        # already loaded
+                        pass
+                    else:
+                        olp_allocator = self.overlap_allocator[overlap_idx]
+                        olp_allocator.reset()
+                        load_stream.wait_event(calc_event)
+                        for j in range(i + 1, min(i + self.overlap_layers + 1, self.num_encoder)):
+                            logger.info("Load encoder layer %d", j)
+                            self.encoder[j].to_device(olp_allocator, load_stream)
+                        self.overlap_allocator_status[overlap_idx] = i + 1
+                    
+                    calc_event = calc_stream.record()
+                    load_event = load_stream.record()
+            with calc_stream:
                 x = self.encoder_final_layer_nrom.forward(self.variable_allocator, x)
-            cupy.cuda.Stream.ptds.synchronize()
-        loading_thread.join()
-        return x    # (batch, dim_model, seq_len)
+            calc_stream.synchronize()
+            return x    # (batch, dim_model, seq_len)
 
     def decode(self, hidden_state, input_length, sampler : Union[str, Callable[[cupy.ndarray], int] ] = "random") -> Generator[int, None, None]:
         if self.encoder_only:
@@ -253,7 +227,7 @@ class T5(Model):
                 raise ValueError("Unknown sampler type %s" % sampler)
         
         with self.device:
-            with cupy.cuda.Stream.ptds:
+            with self.calc_stream:
                 batch_size, _, seq_ipt_len = hidden_state.shape
 
                 # (batch, num_decoder, 2, num_heads, dim_kv, seq_ipt_len),
@@ -296,18 +270,20 @@ class T5(Model):
             step_input : Union[List[int], np.ndarray],  # (batch,)
             step_pos : int
         ):
-        barrier = threading.Barrier(2)
-        loading_thread = threading.Thread(target=self.decoder_loader, args=(barrier,), daemon=True)
-        loading_thread.start()
         with self.device:
-            with cupy.cuda.Stream.ptds:
-                x = self.input_embedding.forward(self.variable_allocator, step_input)    # (batch, dim_model)
-                for i in range(self.num_decoder):
-                    if i % self.overlap_layers == 0:
-                        barrier.wait()
-                        barrier.reset()
-                    logger.info("Calc decoder layer %d", i)
+            load_stream = self.load_stream
+            calc_stream = self.calc_stream
+            load_event = load_stream.record()
+            calc_event = calc_stream.record()
 
+            with calc_stream:
+                x = self.input_embedding.forward(self.variable_allocator, step_input)    # (batch, dim_model)
+            for i in range(self.num_decoder):
+                if i % self.overlap_layers == 0:
+                    calc_stream.wait_event(load_event)
+                logger.info("Calc decoder layer %d", i)
+
+                with calc_stream:
                     x = self.decoder[i].forward(
                         self.variable_allocator,
                         x,                          # (batch, dim_model)
@@ -318,11 +294,27 @@ class T5(Model):
                         dec_position_bias,          # (1, num_heads, max_decoder_length, max_decoder_length)
                         True
                     )
+                if i % self.overlap_layers == self.overlap_layers - 1 and i + 1 < self.num_decoder:
+                    overlap_idx = ((i + 1) // self.overlap_layers) % 2
+                    if self.overlap_allocator_status[overlap_idx] == -(i + 1):
+                        # already loaded
+                        pass
+                    else:
+                        olp_allocator = self.overlap_allocator[overlap_idx]
+                        olp_allocator.reset()
+                        load_stream.wait_event(calc_event)
+                        for j in range(i + 1, min(i + self.overlap_layers + 1, self.num_decoder)):
+                            logger.info("Load decoder layer %d", j)
+                            self.decoder[j].to_device(olp_allocator, load_stream)
+                        self.overlap_allocator_status[overlap_idx] = -(i + 1)
+                    
+                    calc_event = calc_stream.record()
+                    load_event = load_stream.record()
+            with calc_stream:
                 x = self.decoder_final_layer_nrom.forward(self.variable_allocator, x[:, :, cupy.newaxis])[:, :, 0]
                 x = self.lm_head.forward(self.variable_allocator, x)
-            cupy.cuda.Stream.ptds.synchronize()
-        loading_thread.join()
-        return x
+            calc_stream.synchronize()
+            return x
     
     def text_to_id(self, sentence):
         return self.tokenizer.encode(sentence)
