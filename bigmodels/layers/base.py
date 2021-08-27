@@ -140,13 +140,13 @@ class Layer:
             ret += layer.info(prefix + "    ")
         return ret
     
-    def to_device(self, allocator, load_stream):
+    def to_device(self, allocator):
         self.__ensure_variables()
 
         for param in self._parameters.values():
-            param.to_device(allocator, load_stream)
+            param.to_device(allocator)
         for layer in self._sub_layers.values():
-            layer.to_device(allocator, load_stream)
+            layer.to_device(allocator)
 
     def _remove_data(self):
         for param in self._parameters.values():
