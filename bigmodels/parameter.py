@@ -47,15 +47,29 @@ class Parameter:
             raise ValueError("Parameter shape not aligned: requires %s, but got %s" % (self.__shape, shape))
         if dtype != self.__dtype:
             raise ValueError("Parameter dtype error")
-        self.data = data
+        self.data = np.frombuffer(data, self.__dtype)
 
     def to_device(self, allocator : Allocator, load_stream):
+        if self.data is None:
+            raise RuntimeError("data is not loaded.")
+        
         addr = allocator.alloc(self.nbytes)
-
-        arr = np.frombuffer(self.data, self.__dtype)
+        arr = self.data
         self.value = cupy.ndarray(self.shape, dtype=self.__dtype, memptr=addr, order='C')
-
         cupy.cuda.runtime.memcpyAsync( self.value.data.ptr, arr.ctypes.data, arr.nbytes, cupy.cuda.runtime.memcpyHostToDevice, load_stream.ptr)
     
     def _remove_data(self):
         self.data = None
+    
+    def _try_pinned(self):
+        if self.data is None:
+            raise RuntimeError("data is not loaded.")
+        try:
+            mem = cupy.cuda.alloc_pinned_memory(self.nbytes)
+            dst = np.frombuffer(mem, self.data.dtype, self.data.size)
+            dst[...] = self.data
+            self.data = dst
+            logger.info("Allocate pinned %d", self.nbytes)
+        except cupy.cuda.runtime.CUDARuntimeError:
+            # out of memory
+            pass

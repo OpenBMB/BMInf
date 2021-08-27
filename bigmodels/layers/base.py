@@ -154,3 +154,8 @@ class Layer:
         for layer in self._sub_layers.values():
             layer._remove_data()
     
+    def _try_pinned(self):
+        for param in self._parameters.values():
+            param._try_pinned()
+        for layer in self._sub_layers.values():
+            layer._try_pinned()

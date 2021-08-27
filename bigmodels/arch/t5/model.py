@@ -131,8 +131,9 @@ class T5(Model):
 
                     self.to_device(self.parameter_allocator, load_stream)
                 
-                self.load_stream = cupy.cuda.Stream()
-                self.calc_stream = cupy.cuda.Stream()
+                self.device.synchronize()
+                self.load_stream = cupy.cuda.Stream(non_blocking=True)
+                self.calc_stream = cupy.cuda.Stream(non_blocking=True)
                 with self.calc_stream:
                     self.variable_allocator.alloc(config.DYNAMIC_MEMORY) # preallocate
                 self.device.synchronize()
@@ -142,10 +143,19 @@ class T5(Model):
                 for name, layer in self._sub_layers.items():
                     if name in ["encoder", "decoder"]:
                         # move first overlap_size layers to device
-                        for i in range(self.overlap_layers):
-                            layer[i]._remove_data()
+                        pass
                     else:
                         layer._remove_data()
+                
+                for i in range(self.max_overlap_layers):
+                    if i < self.overlap_layers:
+                        self.encoder[i]._remove_data()
+                        self.decoder[i]._remove_data()
+                    else:
+                        if i < self.num_encoder:
+                            self.encoder[i]._try_pinned()
+                        if i < self.num_decoder:
+                            self.decoder[i]._try_pinned()
             else:
                 self._remove_data()
             logger.info("End of model initialization")
