@@ -102,7 +102,7 @@ def main():
     if os.environ.get("BM_BUILD", None) is None:
         check_cublas()
         cuda_version = get_cuda_version()
-        cupy_version = "cupy-cuda%d>=8,<10" % cuda_version
+        cupy_version = "cupy-cuda%d>=9,<10" % cuda_version
         requires = requires + [cupy_version]
 
     setuptools.setup(

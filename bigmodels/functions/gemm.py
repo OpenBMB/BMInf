@@ -1,4 +1,4 @@
-from ..backend import cublas, cupy_ver
+from ..backend import cublas
 import cupy
 import numpy as np
 import logging
@@ -204,41 +204,21 @@ def sgemmBatched(a, aT, b, bT, out):
 
     one = np.array(1, dtype=np.float32)
     zero = np.array(0, dtype=np.float32)
-    if cupy_ver == 9:
-        cublas.sgemmStridedBatched(
-            device.cublas_handle, 
-            transA,
-            transB,
-            m, n, k,
-            one.ctypes.data,
-            a.data.ptr,
-            lda,
-            stride_a,
-            b.data.ptr,
-            ldb,
-            stride_b,
-            zero.ctypes.data,
-            out.data.ptr,
-            ldc,
-            stride_c,
-            batch
-        )
-    else:
-        cublas.sgemmStridedBatched(
-            device.cublas_handle, 
-            transA,
-            transB,
-            m, n, k,
-            one,
-            a.data.ptr,
-            lda,
-            stride_a,
-            b.data.ptr,
-            ldb,
-            stride_b,
-            zero,
-            out.data.ptr,
-            ldc,
-            stride_c,
-            batch
-        )
+    cublas.sgemmStridedBatched(
+        device.cublas_handle, 
+        transA,
+        transB,
+        m, n, k,
+        one.ctypes.data,
+        a.data.ptr,
+        lda,
+        stride_a,
+        b.data.ptr,
+        ldb,
+        stride_b,
+        zero.ctypes.data,
+        out.data.ptr,
+        ldc,
+        stride_c,
+        batch
+    )
