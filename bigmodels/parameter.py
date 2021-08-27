@@ -16,6 +16,7 @@ class Parameter:
         self.value = None
 
         self.data = None
+        self.pinned = None
     
     @property
     def nbytes(self):
@@ -65,11 +66,15 @@ class Parameter:
         if self.data is None:
             raise RuntimeError("data is not loaded.")
         try:
-            mem = cupy.cuda.alloc_pinned_memory(self.nbytes)
-            dst = np.frombuffer(mem, self.data.dtype, self.data.size)
+            self.pinned = cupy.cuda.alloc_pinned_memory(self.nbytes)
+            dst = np.frombuffer(self.pinned, self.data.dtype, self.data.size)
             dst[...] = self.data
             self.data = dst
             logger.info("Allocate pinned %d", self.nbytes)
         except cupy.cuda.runtime.CUDARuntimeError:
             # out of memory
             pass
+    
+    def __del__(self):
+        if self.pinned is not None:
+            self.pinned.mem.free()
