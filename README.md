@@ -1,30 +1,72 @@
-# 说明
+EasyInf
 
-## 安装方法
+------------------------
 
-### 1. 本地安装
+English | [简体中文]
+
+[简体中文]: http://www.baidu.com
+
+EasyInf is a low-resource inference package for large-scale pretrained language models (PLMs).
+
+- **Low resource.** Instead of running on large-scale GPU clusters, the package enables the running of the inference process for large-scale pretrained language models on personal computers!
+- **Open.** Model parameters and configurations are all released, you don't need to access a PLM via online APIs, just run it on your computer! 
+- **Green.** Run pretrained language models with fewer machines and GPUs, also with less energy consumption.
+
+## Demo
+
+Here we provide an online demo based on the package with CPM2.
+
+## Installation
+
+### Configurations
+
+| | Mimimum Configurations | Recommended Configureation |
+|-|-|-|
+| Memory | 16GB | 24GB
+| GPU | NVIDIA GeForce GTX 1060 6GB | NVIDIA Tesla V100 16GB
+| PCI-E |  PCI-E 3.0 x16 |  PCI-E 3.0 x16
+
+
+
+### From Source 
 ```
 python3 setup.py install
 ```
 
-### 2. docker
+### From Docker
 ```
 docker build . -f docker/base.Dockerfile
 ```
 
-## 使用配置
+## Quick Start
 
-### 最低配置
+Load the model.
+```
+import bigmodels
+model = bigmodels.models.CPM2()
+```
 
-* 内存: 16GB
-* 显存: 6GB
-* GPU: GTX 1060
-* PCI-E 3.0 x16
+```
+model.text_to_id()
+model.id_to_text()
+model.get_token_id()
+model.get_id_token()
+```
 
-### 推荐配置
+```
+model.encode()
+model.decode()
+```
 
-* 内存: 24GB
-* 显存: 16GB
-* GPU: NVIDIA Tesla V100
-* PCI-E 3.0 x16
+## Performances
+
+Performances on different platforms.
+
+
+## Contributing
+Links to the user community and contributing guidelines.
+
+## License
+
+The package is released under the Apache 2.0 License.
 
