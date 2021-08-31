@@ -27,6 +27,24 @@ def lookup_cublas_dll():
     cublas_lib_name = "cublas%d_" % (struct.calcsize("P") * 8)
     return lookup_dll(cublas_lib_name)
 
+def unix_find_lib(name):
+    import ctypes.util
+    
+    cuda_path = os.environ.get("CUDA_PATH", None)
+    if cuda_path is not None:
+        lib_name = os.path.join(cuda_path, "lib64", "lib%s.so" % name)
+        if os.path.exists(lib_name):
+            return lib_name
+
+    cuda_path = "/usr/local/cuda"
+    if cuda_path is not None:
+        lib_name = os.path.join(cuda_path, "lib64", "lib%s.so" % name)
+        if os.path.exists(lib_name):
+            return lib_name
+
+    lib_name = ctypes.util.find_library(name)
+    return lib_name
+
 def get_cuda_version():
     env_version = os.environ.get("CUDA_VERSION", None)
     if env_version is not None:
@@ -40,8 +58,7 @@ def get_cuda_version():
         lib = ctypes.WinDLL(dll_path)
     else:
         import ctypes
-        import ctypes.util
-        lib_name = ctypes.util.find_library("cudart")
+        lib_name = unix_find_lib("cudart")
         if lib_name is None:
             raise RuntimeError("Couldn't find CUDA runtime")
         lib = ctypes.cdll.LoadLibrary(lib_name)
@@ -62,9 +79,7 @@ def check_cublas():
         if lookup_cublas_dll() is None:
             raise RuntimeError("Couldn't find cublas on windows")
     else:
-        import ctypes
-        import ctypes.util
-        if ctypes.util.find_library("cublas") is None:
+        if unix_find_lib("cublas") is None:
             raise RuntimeError("Couldn't find cublas")
 
 def get_readme(path):
