@@ -23,14 +23,13 @@ def generate_blank(model : bigmodels.models.CPM2, sentence : str):
     idx = [idx]
     input_length = [len(idx[0])]
 
-    hidden_state = model.encode(np.array(idx, dtype=np.int64), input_length)
+    encoder_result = model.encode(np.array(idx, dtype=np.int64), input_length)
 
-    
     blanks = []
 
     next_span = 0
-    
-    for token_id in model.decode( hidden_state, input_length):
+
+    for token_id in model.decode( encoder_result ):
         token_id = token_id[0]
         if token_id == model.get_token_id("<s_%d>" % next_span):
             next_span += 1

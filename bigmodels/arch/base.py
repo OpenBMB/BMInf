@@ -17,4 +17,6 @@ class Configuration:
         if name.startswith("_"):
             super().__setattr__(name, value)
         self._kws[name] = value
-    
+
+class InferenceContext:
+    pass

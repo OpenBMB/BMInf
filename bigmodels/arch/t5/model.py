@@ -12,6 +12,7 @@ from ...layers.lm_head import LMHead
 from ...layers.layer_list import LayerList
 from .config import T5Configuration
 from .tokenizer import T5Tokenizer
+from .context import T5InferenceContext
 from ...allocator import ReusedAllocator, SizeLimitedAllocator
 import numpy as np
 import logging
@@ -250,9 +251,12 @@ class T5(Model):
                 x = self.encoder_final_layer_nrom.forward(self.variable_allocator, x)
             calc_stream.synchronize()
             load_thread.join()
-            return x    # (batch, dim_model, seq_len)
+            return T5InferenceContext(x, input_length)    # (batch, dim_model, seq_len)
 
-    def decode(self, hidden_state, input_length, sampler : Union[str, Callable[[cupy.ndarray], int] ] = "random") -> Generator[int, None, None]:
+    def decode(self, ctx : T5InferenceContext, sampler : Union[str, Callable[[cupy.ndarray], int] ] = "random") -> Generator[int, None, None]:
+        hidden_state = ctx.hidden_states
+        input_length = ctx.input_length
+        
         if self.encoder_only:
             raise ValueError("T5-encoder only")
 
@@ -286,6 +290,11 @@ class T5(Model):
                 encoder_mask = self.input_mask.forward(self.variable_allocator, input_length, seq_ipt_len)[:, :, 0]
 
                 last_ipt = [1] * batch_size
+
+                ctx.encoder_layers_kv = encoder_layers_kv
+                ctx.decoder_position_bias = dec_pos
+                ctx.past_kv = past_kv
+                ctx.encoder_mask = encoder_mask
 
         for i in range(self.max_decoder_length):
             with self.device:

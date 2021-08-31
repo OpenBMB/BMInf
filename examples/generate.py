@@ -7,14 +7,14 @@ def generate_span(model : bigmodels.models.CPM2, sentence):
     idx = [model.text_to_id(sentence) + [ model.get_token_id("<s_0>") ]]
     input_length = [len(idx[0])]
 
-    hidden_state = model.encode(np.array(idx, dtype=np.int64), input_length)
+    encoder_result = model.encode(np.array(idx, dtype=np.int64), input_length)
     begin_token = model.get_token_id("<s_0>")
     end_token = model.get_token_id("<s_1>")
     record = False
 
     first_token = True
-    for token_id in model.decode( hidden_state, input_length, sampler="greedy"):
-        token_id = token_id[0]
+    for token_ids in model.decode( encoder_result, sampler="greedy"):
+        token_id = token_ids[0]
         if first_token:
             if token_id != begin_token:
                 raise RuntimeError("Decoder error")
