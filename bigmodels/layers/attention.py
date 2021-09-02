@@ -230,15 +230,15 @@ class PartialAttention(Layer):
         if self.is_self_attn:
             elementwise_copy_scale(
                 qkv_i32, 
-                self.w_project_qkv_scale.value,   # (dim_qkv * num_heads * 3, 1)
-                scale,     # (batch_size, 1, 1)
+                self.w_project_qkv_scale.value,   # (1#batch_size, dim_qkv * num_heads * 3, 1)
+                scale[:, :, cupy.newaxis],     # (batch_size, 1, 1)
                 out=qkv_f32
             )
         else:
             elementwise_copy_scale(
                 qkv_i32, 
                 self.w_project_q_scale.value,   # (dim_qkv * num_heads, 1)
-                scale,     # (batch_size, 1, 1)
+                scale[:, :, cupy.newaxis],     # (batch_size, 1, 1)
                 out=qkv_f32
             )
         del qkv_i32
@@ -317,8 +317,8 @@ class PartialAttention(Layer):
 
         elementwise_copy_scale(
             project_out_i32, 
-            self.w_out_scale.value, # (dim_model, 1)
-            scale,  # (batch, 1, 1)
+            self.w_out_scale.value, # (1#batch_size, dim_model, 1)
+            scale[:, :, cupy.newaxis],  # (batch, 1, 1)
             out=project_out_f16
         )
         return project_out_f16[:, :, 0] # (batch, dim_model)
