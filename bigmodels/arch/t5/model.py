@@ -1,7 +1,7 @@
 import threading
 from typing import Callable, Generator, List, Union
 import cupy
-from ..base import Model
+from ..seq2seq import Seq2SeqModel
 from ...layers.transformer_block import TransformerBlockDecoder, TransformerBlockEncoder
 from ...layers.encoder_kv import EncoderKeyValueProjection
 from ...layers.position_bias import PositionBias
@@ -21,7 +21,7 @@ from ...utils import round_up
 
 logger = logging.getLogger(__name__)
 
-class T5(Model):
+class T5(Seq2SeqModel):
     def __init__(self, config : T5Configuration):
         # Build Model
         logger.info("Building model")
@@ -252,24 +252,13 @@ class T5(Model):
             calc_stream.synchronize()
             load_thread.join()
             return T5InferenceContext(x, input_length)    # (batch, dim_model, seq_len)
-
-    def decode(self, ctx : T5InferenceContext, sampler : Union[str, Callable[[cupy.ndarray], int] ] = "random") -> Generator[int, None, None]:
+    
+    def _init_decoder_context(self, ctx : T5InferenceContext):
         hidden_state = ctx.hidden_states
         input_length = ctx.input_length
         
         if self.encoder_only:
             raise ValueError("T5-encoder only")
-
-        if isinstance(sampler, str):
-            if sampler == "greedy":
-                from ...utils import greedy_sampler
-                sampler = greedy_sampler
-            elif sampler == "random":
-                from ...utils import random_sampler
-                sampler = random_sampler
-            else:
-                raise ValueError("Unknown sampler type %s" % sampler)
-        
         with self.device:
             with self.calc_stream:
                 batch_size, _, seq_ipt_len = hidden_state.shape
@@ -289,36 +278,26 @@ class T5(Model):
                 
                 encoder_mask = self.input_mask.forward(self.variable_allocator, input_length, seq_ipt_len)[:, :, 0]
 
-                last_ipt = [1] * batch_size
 
                 ctx.encoder_layers_kv = encoder_layers_kv
                 ctx.decoder_position_bias = dec_pos
                 ctx.past_kv = past_kv
                 ctx.encoder_mask = encoder_mask
+                ctx.step_pos = 0
 
-        for i in range(self.max_decoder_length):
-            with self.device:
-                x = self.decode_step(
-                    past_kv,
-                    encoder_layers_kv,
-                    dec_pos,
-                    encoder_mask,
-                    last_ipt,
-                    i,
-                )
-                last_ipt = [
-                    sampler(x[i]) for i in range(batch_size)
-                ]
-                yield last_ipt
+    def decode_step(self,
+            ctx : T5InferenceContext,
+            inputs : Union[List[int], np.ndarray]
+        ) -> cupy.ndarray:
+
+        past_kv = ctx.past_kv
+        encoder_layers_kv = ctx.encoder_layers_kv
+        dec_position_bias = ctx.decoder_position_bias
+        encoder_mask = ctx.encoder_mask
+        step_input = inputs
+        step_pos = ctx.step_pos
+        ctx.step_pos += 1
     
-    def decode_step(self, 
-            past_kv : cupy.ndarray,                     # (num_decoder, batch, 2, num_heads, dim_kv, max_decoder_length)
-            encoder_layers_kv : cupy.ndarray,           # (batch, num_decoder, 2, num_heads, dim_kv, seq_ipt_len)
-            dec_position_bias : cupy.ndarray,           # (1, num_heads, max_decoder_length, max_decoder_length)
-            encoder_mask : cupy.ndarray,                # (batch, seq_ipt_len)
-            step_input : Union[List[int], np.ndarray],  # (batch,)
-            step_pos : int
-        ):
         barrier = threading.Barrier(2)
         load_thread = threading.Thread(target=self.decode_loader, args=(barrier, self.load_stream), daemon=True)
         load_thread.start()
@@ -354,18 +333,18 @@ class T5(Model):
             load_thread.join()
             return x
     
-    def text_to_id(self, sentence):
+    def _text_to_id(self, sentence):
         return self.tokenizer.encode(sentence)
 
-    def id_to_text(self, idx : List[int]):
+    def _id_to_text(self, idx : List[int]):
         return self.tokenizer.decode(idx)
     
-    def get_token_id(self, token : str, use_unk : bool = True) -> Union[int, None]:
+    def _get_token_id(self, token, use_unk):
         token = token.translate(self.tokenizer.translator_enc)
         if use_unk:
             return self.tokenizer.encoder.get(token, self.tokenizer.unk_id)
         else:
             return self.tokenizer.encoder.get(token, None)
     
-    def get_id_token(self, idx : int) -> str:
+    def _get_id_token(self, idx):
         return self.tokenizer.decoder[idx].translate(self.tokenizer.translator_dec)

@@ -14,6 +14,7 @@
 # limitations under the License.
 from collections import OrderedDict
 from ...utils import jieba
+from ..seq2seq import Seq2SeqTokenizer
 
 class WordpieceTokenizer(object):
 
@@ -68,7 +69,7 @@ def read_vocab(path):
             ret[word] = len(ret)
     return ret
 
-class T5Tokenizer(object):
+class T5Tokenizer(Seq2SeqTokenizer):
 
     def __init__(self, vocab_path, max_len=None, max_sentinels=190):
         self.max_len = max_len if max_len is not None else int(1e12)
@@ -87,31 +88,19 @@ class T5Tokenizer(object):
 
     def __len__(self):
         return len(self.encoder)
+    
+    @property
+    def sod_id(self) -> int:
+        return self.encoder[self.sod_token]
 
     @property
     def eod_id(self):
         return self.encoder[self.eod_token]
-
-    @property
-    def pad_id(self):
-        return self.encoder[self.pad_token]
     
     @property
     def unk_id(self):
         return self.encoder[self.unk_token]
 
-    @property
-    def eod_token(self):
-        return '<eod>'
-
-    @property
-    def pad_token(self):
-        return '<pad>'
-    
-    @property
-    def unk_token(self):
-        return "<unk>"
-        
     def tokenize(self, text):
         """ Tokenize a string. """
         output_tokens = []
@@ -135,3 +124,6 @@ class T5Tokenizer(object):
 
     def convert_ids_to_tokens(self, ids):
         return [self.decoder[x] for x in ids]
+    
+    def get_span(self, span_id) -> int:
+        return self.encoder["<s_%d>" % span_id]

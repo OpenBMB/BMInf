@@ -1,61 +1,19 @@
-import numpy as np
 import bigmodels
 
-TOKEN_BLANK = "<blank>"
-
-def generate_blank(model : bigmodels.models.CPM2, sentence : str):
-    st = 0
-    idx = []
-    num_spans = 0
-    while True:
-        pos = sentence.find(TOKEN_BLANK, st)
-        if pos == -1:
-            idx += model.text_to_id(sentence[st:])
-            break
-        idx += model.text_to_id( sentence[st:pos] )
-        idx += [ model.get_token_id("<s_%d>" % num_spans) ]
-        num_spans += 1
-        st = pos + len(TOKEN_BLANK)
-    
-    if num_spans == 0:
-        return ""
-        
-    idx = [idx]
-    input_length = [len(idx[0])]
-
-    encoder_result = model.encode(np.array(idx, dtype=np.int64), input_length)
-
-    blanks = []
-
-    next_span = 0
-
-    for token_id in model.decode( encoder_result ):
-        token_id = token_id[0]
-        if token_id == model.get_token_id("<s_%d>" % next_span):
-            next_span += 1
-            if next_span > num_spans:
-                break
-            blanks.append([])
-        else:
-            blanks[-1].append(token_id)
-    return [model.id_to_text(tokens) for tokens in blanks]
-
-def fill_blank(model : bigmodels.models.CPM2, sentence : str):
-    print("Input: ", sentence.replace(TOKEN_BLANK,  "\033[4m    \033[0m") )
-    result = sentence
-    for blank in generate_blank(model, sentence):
-        result = result.replace(TOKEN_BLANK, "\033[0;32m" + blank + "\033[0m", 1)
-    print("Output:", result)
-
-input_text = """7月底，四川此轮疫情中与天府机场相关的<blank>病例曾引发<blank>关注。"""
+TOKEN_SPAN = "<span>"
+input_text = "北京环球度假区相关负责人介绍，北京环球影城指定单日门票将采用<span>制度，即推出淡季日、平季日、旺季日和特定日门票。<span>价格为418元，<span>价格为528元，<span>价格为638元，<span>价格为<span>元。北京环球度假区将提供90天滚动价格日历，以方便游客提前规划行程。"
+def fill_blank(cpm2 : bigmodels.models.CPM2, text : str):
+    print("Input: ", text.replace(TOKEN_SPAN,  "\033[4m____\033[0m") )
+    for result in cpm2.generate(input_text, top_n=10, temperature=0.9):
+        value = result["text"]
+        text = text.replace(TOKEN_SPAN, "\033[0;32m" + value + "\033[0m", 1)
+    print("Output:", text)
 
 def main():
     print("Loading model")
     cpm2 = bigmodels.models.CPM2()
     print("Start")
-
     fill_blank(cpm2, input_text)
-    
 
 if __name__ == "__main__":
     main()
