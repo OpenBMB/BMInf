@@ -35,6 +35,7 @@ class T5(Seq2SeqModel):
 
         self.encoder_only = config.ENCODER_ONLY
         self.max_decoder_length = config.MAX_DECODER_LENGTH
+        self.dim_model = config.DIM_MODEL
 
         logger.info("============ T5 ==============")
         logger.info("MEM_OVERLAP: %s", self.memory_overlap)
