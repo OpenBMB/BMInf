@@ -6,7 +6,13 @@ def generate(model : bigmodels.models.CPM2, sentence):
     with tqdm() as progress_bar:
         progress_bar.write(sentence)
         while True:
-            value = model.generate(sentence + "<span>", temperature=1.1, top_p=0.9, top_n=20, frequency_penalty=5)[0]["text"]
+            value = model.generate(sentence + "<span>", 
+                temperature=1.1, 
+                top_p=0.9, 
+                top_n=20, 
+                frequency_penalty=5,
+                presence_penalty=0
+            )[0]["text"]
             sentence += value
             progress_bar.write(sentence)
             progress_bar.update(1)

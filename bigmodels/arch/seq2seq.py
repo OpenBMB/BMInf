@@ -57,8 +57,8 @@ class Seq2SeqModel(Model):
             top_n : Optional[int] = None,
             top_p : Optional[float] = None,
             temperature : float = 0.9,
-            frequency_penalty : List[float] = 0,
-            presence_penalty : List[float] = 0,
+            frequency_penalty : float = 0,
+            presence_penalty : float = 0,
         ):
         if spans_position is None:
             spans_position = []
