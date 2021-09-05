@@ -1,8 +1,8 @@
 import torch
 import numpy as np
-from bigmodels.models.cpm2 import CPM2, CPM2Configuration
-from bigmodels.parameter import Parameter
-from bigmodels.layers.transformer_block import TransformerBlockDecoder
+from bminference.models.cpm2 import CPM2, CPM2Configuration
+from bminference.parameter import Parameter
+from bminference.layers.transformer_block import TransformerBlockDecoder
 
 def build_parameter(name, parameter : Parameter, ckpt):
     tensor = ckpt[name]
