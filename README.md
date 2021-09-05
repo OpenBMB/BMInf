@@ -6,16 +6,20 @@ English | [简体中文]
 
 BMInference (Big Model Inference) is a low-resource inference package for large-scale pretrained language models (PLMs).
 
+
 - **Low Resource.** Instead of running on large-scale GPU clusters, the package enables the running of the inference process for large-scale pretrained language models on personal computers!
 - **Open.** Model parameters and configurations are all publicly released, you don't need to access a PLM via online APIs, just run it on your computer! 
 - **Green.** Run pretrained language models with fewer machines and GPUs, also with less energy consumption.
 
 ## Demo
 Here we provide an online demo based on the package with CPM2.
+![demo](./docs/images/demo.gif)
 
 ## Install
 
-- From source: ``python setup.py install``
+- From pip: ``pip install bminference``
+
+- From source code: download the package and run ``python setup.py install``
 
 - From docker: ``docker build . -f docker/base.Dockerfile``
 
@@ -33,8 +37,8 @@ Here we provide a esay script for using BMInference.
 
 Firstly, import a model from the model base (e.g. CPM1, CPM2, EVA2).
 ```python
-import bigmodels
-cpm2 = bigmodels.models.CPM2()
+import bminference
+cpm2 = bminference.models.CPM2()
 ```
 
 Then define the text and use the ``<span>`` token to denote the blank to fill in.
@@ -66,6 +70,7 @@ Here we report the speeds of CPM2 encoder and decoder we have tested on differen
 |-|-|-|
 | NVIDIA GeForce GTX 1060 | 533 | 1.6
 | NVIDIA GeForce GTX 1080Ti | 1200 | 12
+| NVIDIA GeForce GTX 2080Ti | 2275 | 19
 
 ## Contributing
 Links to the user community and contributing guidelines.

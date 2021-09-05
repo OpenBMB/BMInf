@@ -12,10 +12,12 @@ BMInference (Big Model Inference) 是一个用于大规模预训练语言模型�
 
 ## Demo
 Todo：CPM2演示示例
+![demo](./docs/images/demo.gif)
 
 ## 安装
+- 用pip安装：``pip install bminference``
 
-- 从源代码安装: ``python setup.py install``
+- 从源代码安装: 下载工具包并在目录中运行 ``python setup.py install``
 
 - 从Docker安装: ``docker build . -f docker/base.Dockerfile``
 
@@ -33,8 +35,8 @@ Todo：CPM2演示示例
 
 首先，从模型库中导入一个想要使用的模型（如CPM1，CPM2或EVA2）。
 ```python
-import bigmodels
-cpm2 = bigmodels.models.CPM2()
+import bminference
+cpm2 = bminference.models.CPM2()
 ```
 
 定义输入文本，使用``<span>``标签来表示需要填入文本的位置。
@@ -66,6 +68,7 @@ print(text)
 |-|-|-|
 | NVIDIA GeForce GTX 1060 | 533 | 1.6
 | NVIDIA GeForce GTX 1080Ti | 1200 | 12
+| NVIDIA GeForce GTX 2080Ti | 2275 | 19
 
 ## 参与贡献
 Todo：开源社区链接和贡献指南
