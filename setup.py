@@ -4,10 +4,10 @@ import sys
 import struct
 
 CONFIG = {
-    "package_name": "bigmodels",
+    "package_name": "bminference",
     "author": "a710128",
     "author_email": "qbjooo@qq.com",
-    "description": "A toolkit for big models",
+    "description": "A toolkit for big model inference",
     "version": None
 }
 
