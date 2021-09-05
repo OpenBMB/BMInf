@@ -140,3 +140,5 @@ cython_debug/
 *.pt
 
 *.npy
+
+bminference/version.py
