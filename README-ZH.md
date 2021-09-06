@@ -6,12 +6,11 @@
 
 BMInference (Big Model Inference) 是一个用于大规模预训练语言模型（pretrained language models, PLM）推理阶段的低资源工具包。
 
-- **低资源** 无需在大规模GPU集群上运行，该工具包允许用户在个人电脑上使用大规模预训练语言模型进行推理！
+- **低资源** 无需在大规模GPU集群上运行，该工具包允许用户在拥有至少一块GPU的个人电脑上使用大规模预训练语言模型进行推理！
 - **开放** 模型参数和配置全部开放，用户无需通过在线API使用预训练语言模型，用户可以直接在本地运行。
 - **绿色** 使用更少的机器和GPU、更少的能源运行预训练语言模型。
 
 ## Demo
-Todo：CPM2演示示例
 ![demo](./docs/images/demo.gif)
 
 ## 安装
@@ -19,7 +18,7 @@ Todo：CPM2演示示例
 
 - 从源代码安装: 下载工具包并在目录中运行 ``python setup.py install``
 
-- 从Docker安装: ``docker build . -f docker/base.Dockerfile``
+- 从Docker安装: ``docker run -it --gpus 1 -v $HOME/.cache/bigmodels:/root/.cache/bigmodels --rm openbmb/bminference:0.0.2 python3 examples/fill_blank.py``
 
 运行BMInference的最低配置与推荐配置：
 
