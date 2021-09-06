@@ -48,7 +48,10 @@ def unix_find_lib(name):
 def get_cuda_version():
     env_version = os.environ.get("CUDA_VERSION", None)
     if env_version is not None:
-        return int(env_version)
+        if env_version.find(".") == -1:
+            return int(env_version)
+        vers = env_version.split(".")
+        return int(vers[0]) * 10 + int(vers[1])
 
     if sys.platform.startswith("win"):
         dll_path = lookup_cuda_dll()
