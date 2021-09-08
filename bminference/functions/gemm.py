@@ -171,7 +171,7 @@ def _igemm(allocator : Allocator, a, aT, b, bT, c, device, stream):
                 ctypes.byref( ctypes.c_int32(cublasLt.CUBLAS_OP_T)),
                 ctypes.sizeof(ctypes.c_int32)
             ) )
-            transform_desc_c = cublasLt.cublasLtMatrixTransformDesc_t()
+        transform_desc_c = cublasLt.cublasLtMatrixTransformDesc_t()
         cublasLt.checkCublasStatus( cublasLt.cublasLtMatrixTransformDescCreate(transform_desc_c, cublasLt.CUDA_R_32I) )
 
         cublasLt.checkCublasStatus( cublasLt.cublasLtMatrixTransform(lthandle, transform_desc_a, ctypes.byref(v1), a.data.ptr, layout_a, ctypes.byref(v0), 0, 0, trans_a.ptr, layout_trans_a, stream.ptr) )
