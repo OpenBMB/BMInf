@@ -93,11 +93,11 @@ def igemm(allocator : Allocator, a, aT, b, bT, c):
         trans_ldc = 32 * m
         stride_trans_a = round_up(k, 32) // 32 * trans_lda
         stride_trans_b = round_up(k, 32) // 32 * trans_ldb
-        stride_trans_c = ctypes.sizeof(ctypes.c_int32) * round_up(n, 32) // 32 * trans_ldc
+        stride_trans_c = round_up(n, 32) // 32 * trans_ldc
 
         trans_a = allocator.alloc( stride_trans_a * a.shape[0] )
         trans_b = allocator.alloc( stride_trans_b * b.shape[0] )
-        trans_c = allocator.alloc( stride_trans_c * c.shape[0] )
+        trans_c = allocator.alloc( ctypes.sizeof(ctypes.c_int32) * stride_trans_c * c.shape[0] )
 
         layout_trans_a, layout_trans_b, layout_trans_c = cublasLt.cublasLtMatrixLayout_t(), cublasLt.cublasLtMatrixLayout_t(), cublasLt.cublasLtMatrixLayout_t()
         cublasLt.checkCublasStatus( cublasLt.cublasLtMatrixLayoutCreate(layout_trans_a, cublasLt.CUDA_R_8I, m, k, trans_lda) )
