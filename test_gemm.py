@@ -1,10 +1,10 @@
+from bminference import allocator
 from bminference.allocator import SizeLimitedAllocator
 from bminference.functions.gemm import igemm
 import cupy
 import random
 
 def test(a, b, m, k, n):
-    print("Test (%d, %d, %d, %d)" % (b, m, k, n))
     aT = random.random() < 0.5
     bT = random.random() < 0.5
     
@@ -16,21 +16,20 @@ def test(a, b, m, k, n):
         ba = 1
     elif broad_b < 0.6:
         bb = 1
-
     
     if aT:
-        ma = (cupy.random.randn(ba, m, k) * 10).astype(cupy.int8)
+        ma = (cupy.random.randn(ba, m, k) * 4).astype(cupy.int8)
     else:
-        ma = (cupy.random.randn(ba, k, m) * 10).astype(cupy.int8)
+        ma = (cupy.random.randn(ba, k, m) * 4).astype(cupy.int8)
     
     if bT:
-        mb = (cupy.random.randn(bb, k, n) * 10).astype(cupy.int8)
+        mb = (cupy.random.randn(bb, k, n) * 4).astype(cupy.int8)
     else:
-        mb = (cupy.random.randn(bb, n, k) * 10).astype(cupy.int8)
-    
+        mb = (cupy.random.randn(bb, n, k) * 4).astype(cupy.int8)
+
     mc = cupy.ndarray((b, n, m), dtype=cupy.int32)
     igemm(a, ma, aT, mb, bT, mc)
-
+    """
     ac = cupy.ndarray((b, n, m), dtype=cupy.int32)
     for i in range(b):
         if ba == 1:
@@ -50,21 +49,30 @@ def test(a, b, m, k, n):
         m2 = m2.astype(cupy.int32)
         ac[i, :] = cupy.matmul(m1, m2).T
     diff = cupy.abs(ac - mc)
-    print(diff.max())
-
+    amx = diff.argmax()
+    if amx > 0:
+        print("Test (%d, %d, %d, %d)" % (b, m, k, n))
+        print("aT: %s, bT: %s, batch_a: %d, batch_b: %d" % (aT, bT, ba, bb))
+        print (ac.reshape(-1)[amx], mc.reshape(-1)[amx])
+        print(diff.max())
+        print(diff)
+        from IPython import embed; embed()
+    """
+    
 def main():
     allocator = SizeLimitedAllocator(1024 * 1024 * 1024 * 4)
-    test(allocator, 1, 2, 2, 2)
-    test(allocator, 1, 5, 7, 9)
-    test(allocator, 1, 13, 15, 17)
-    test(allocator, 1, 15, 20, 9)
-    for i in range(32):
+    """
+    for i in range(3200):
         b = random.randint(1, 128)
         m = random.randint(1, 1024)
         k = random.randint(1, 1024)
         n = random.randint(1, 1024)
         test(allocator, b, m, k, n)
-    
+        print(allocator._pool.used_bytes(), allocator._pool.total_bytes())
+    """
+    from tqdm import tqdm
+    for i in tqdm(range(3200)):
+        test(allocator, 128, 1023, 1023, 1023)
 
 if __name__ == "__main__":
     main()

@@ -18,7 +18,38 @@ def get_handle(device):
         cublasLt_handles[device.id] = v
     return cublasLt_handles[device.id]
         
+def round_matrix(allocator : Allocator, x, d, stream):
+    batch, m, n = x.shape
+    round_n = round_up(n, d)
+    round_m = round_up(m, d)
+    if round_n == n and round_m == m:
+        return x
+    nw_x = allocator.alloc_array((batch, round_m, round_n), dtype=x.dtype)
+    cupy.cuda.runtime.memsetAsync(nw_x.data.ptr, 0, nw_x.nbytes, stream.ptr)
+    nw_x[:, :m, :n] = x
+    logger.info("Round matrix (%d, %d) -> (%d, %d)", m, n, round_m, round_n)
+    return nw_x
+
+
 def igemm(allocator : Allocator, a, aT, b, bT, c):
+    device = a.device
+    stream = cupy.cuda.get_current_stream()
+
+    cc = int(device.compute_capability)
+    if cc >= 75:
+        a = round_matrix(allocator, a, 32, stream)
+        b = round_matrix(allocator, b, 32, stream)
+        nc = round_matrix(allocator, c, 32, stream)
+    else:
+        a = round_matrix(allocator, a, 4, stream)
+        b = round_matrix(allocator, b, 4, stream)
+        nc = round_matrix(allocator, c, 4, stream)
+    _igemm(allocator, a, aT, b, bT, nc, device, stream)
+    if nc.shape != c.shape:
+        c[:, :, :] = nc[:, :c.shape[1], :c.shape[2]]
+    return c
+
+def _igemm(allocator : Allocator, a, aT, b, bT, c, device, stream):
     assert isinstance(a, cupy.ndarray)
     assert isinstance(b, cupy.ndarray)
     assert isinstance(c, cupy.ndarray)
@@ -28,10 +59,9 @@ def igemm(allocator : Allocator, a, aT, b, bT, c):
     assert a._c_contiguous
     assert b._c_contiguous
     assert c._c_contiguous
-    assert a.device == b.device
-    assert b.device == c.device
-    device = a.device
-    stream = cupy.cuda.get_current_stream()
+    assert a.device == device
+    assert b.device == device
+    assert c.device == device
     lthandle = get_handle(device)
 
     num_batch = 1
@@ -72,6 +102,9 @@ def igemm(allocator : Allocator, a, aT, b, bT, c):
     #  Ampere >= 80
     #  Turing >= 75
     cc = int(device.compute_capability)
+
+    v1 = ctypes.c_int(1)
+    v0 = ctypes.c_int(0)
 
     layout_a, layout_b, layout_c = cublasLt.cublasLtMatrixLayout_t(), cublasLt.cublasLtMatrixLayout_t(), cublasLt.cublasLtMatrixLayout_t()
     cublasLt.checkCublasStatus( cublasLt.cublasLtMatrixLayoutCreate(layout_a, cublasLt.CUDA_R_8I, a.shape[2], a.shape[1], a.shape[2]) )
@@ -115,7 +148,7 @@ def igemm(allocator : Allocator, a, aT, b, bT, c):
 
         cublasLt.checkCublasStatus( cublasLt.cublasLtMatrixLayoutCreate(layout_trans_c, cublasLt.CUDA_R_32I, m, n, trans_ldc) )
         cublasLt.checkCublasStatus( cublasLt.cublasLtMatrixLayoutSetAttribute(layout_trans_c, cublasLt.CUBLASLT_MATRIX_LAYOUT_ORDER, ctypes.byref(ctypes.c_int32(cublasLt.CUBLASLT_ORDER_COL32)), ctypes.sizeof(ctypes.c_int32)) )
-        cublasLt.checkCublasStatus( cublasLt.cublasLtMatrixLayoutSetAttribute(layout_trans_c, cublasLt.CUBLASLT_MATRIX_LAYOUT_BATCH_COUNT, ctypes.byref(ctypes.c_int32(c.shape[0])), ctypes.sizeof(ctypes.c_int32)) )
+        cublasLt.checkCublasStatus( cublasLt.cublasLtMatrixLayoutSetAttribute(layout_trans_c, cublasLt.CUBLASLT_MATRIX_LAYOUT_BATCH_COUNT, ctypes.byref(ctypes.c_int32(num_batch)), ctypes.sizeof(ctypes.c_int32)) )
         cublasLt.checkCublasStatus( cublasLt.cublasLtMatrixLayoutSetAttribute(layout_trans_c, cublasLt.CUBLASLT_MATRIX_LAYOUT_STRIDED_BATCH_OFFSET, ctypes.byref(ctypes.c_int64(stride_trans_c)), ctypes.sizeof(ctypes.c_int64)) )
 
         transform_desc_a = cublasLt.cublasLtMatrixTransformDesc_t()
@@ -138,212 +171,97 @@ def igemm(allocator : Allocator, a, aT, b, bT, c):
                 ctypes.byref( ctypes.c_int32(cublasLt.CUBLAS_OP_T)),
                 ctypes.sizeof(ctypes.c_int32)
             ) )
+            transform_desc_c = cublasLt.cublasLtMatrixTransformDesc_t()
+        cublasLt.checkCublasStatus( cublasLt.cublasLtMatrixTransformDescCreate(transform_desc_c, cublasLt.CUDA_R_32I) )
+
+        cublasLt.checkCublasStatus( cublasLt.cublasLtMatrixTransform(lthandle, transform_desc_a, ctypes.byref(v1), a.data.ptr, layout_a, ctypes.byref(v0), 0, 0, trans_a.ptr, layout_trans_a, stream.ptr) )
+        cublasLt.checkCublasStatus( cublasLt.cublasLtMatrixTransform(lthandle, transform_desc_b, ctypes.byref(v1), b.data.ptr, layout_b, ctypes.byref(v0), 0, 0, trans_b.ptr, layout_trans_b, stream.ptr) )
+
+        cublasLt.checkCublasStatus( cublasLt.cublasLtMatrixLayoutSetAttribute(layout_trans_a, cublasLt.CUBLASLT_MATRIX_LAYOUT_BATCH_COUNT, ctypes.byref(ctypes.c_int32(num_batch)), ctypes.sizeof(ctypes.c_int32)) )
+        if a.shape[0] != num_batch:
+            cublasLt.checkCublasStatus( cublasLt.cublasLtMatrixLayoutSetAttribute(layout_trans_a, cublasLt.CUBLASLT_MATRIX_LAYOUT_STRIDED_BATCH_OFFSET, ctypes.byref(ctypes.c_int64(0)), ctypes.sizeof(ctypes.c_int64)) )
+        cublasLt.checkCublasStatus( cublasLt.cublasLtMatrixLayoutSetAttribute(layout_trans_b, cublasLt.CUBLASLT_MATRIX_LAYOUT_BATCH_COUNT, ctypes.byref(ctypes.c_int32(num_batch)), ctypes.sizeof(ctypes.c_int32)) )
+        if b.shape[0] != num_batch:
+            cublasLt.checkCublasStatus( cublasLt.cublasLtMatrixLayoutSetAttribute(layout_trans_b, cublasLt.CUBLASLT_MATRIX_LAYOUT_STRIDED_BATCH_OFFSET, ctypes.byref(ctypes.c_int64(0)), ctypes.sizeof(ctypes.c_int64)) )
+        matmul_desc = cublasLt.cublasLtMatmulDesc_t()
+        
+        if cublasLt.VERSION == 10:
+            cublasLt.checkCublasStatus( cublasLt.cublasLtMatmulDescCreate(matmul_desc, cublasLt.CUDA_R_32I) )
+        else:
+            cublasLt.checkCublasStatus( cublasLt.cublasLtMatmulDescCreate(matmul_desc, cublasLt.CUBLAS_COMPUTE_32I, cublasLt.CUDA_R_32I) )
+
+        if cc >= 75:
+            cublasLt.checkCublasStatus( cublasLt.cublasLtMatmulDescSetAttribute(matmul_desc, cublasLt.CUBLASLT_MATMUL_DESC_TRANSB, ctypes.byref( ctypes.c_int32(cublasLt.CUBLAS_OP_T)), ctypes.sizeof(ctypes.c_int32)) )
+
+        cublasLt.checkCublasStatus( cublasLt.cublasLtMatmul(
+            lthandle, 
+            matmul_desc, 
+            ctypes.byref(ctypes.c_int32(1)), 
+            trans_a.ptr, 
+            layout_trans_a, 
+            trans_b.ptr, 
+            layout_trans_b, 
+            ctypes.byref(ctypes.c_int32(0)), 
+            trans_c.ptr,
+            layout_trans_c,
+            trans_c.ptr,
+            layout_trans_c,
+            0,
+            0,
+            0,
+            stream.ptr
+        ))
+        cublasLt.checkCublasStatus(cublasLt.cublasLtMatrixTransform(lthandle, transform_desc_c, ctypes.byref(v1), trans_c.ptr, layout_trans_c, ctypes.byref(v0), 0, 0, c.data.ptr, layout_c, stream.ptr))
+        cublasLt.checkCublasStatus(cublasLt.cublasLtMatrixLayoutDestroy(layout_trans_a))
+        cublasLt.checkCublasStatus(cublasLt.cublasLtMatrixLayoutDestroy(layout_trans_b))
+        cublasLt.checkCublasStatus(cublasLt.cublasLtMatrixLayoutDestroy(layout_trans_c))
+        cublasLt.checkCublasStatus(cublasLt.cublasLtMatrixTransformDescDestroy(transform_desc_a))
+        cublasLt.checkCublasStatus(cublasLt.cublasLtMatrixTransformDescDestroy(transform_desc_b))
+        cublasLt.checkCublasStatus(cublasLt.cublasLtMatrixTransformDescDestroy(transform_desc_c))
     else:
-        round_n = round_up(n, 8)
-        round_m = round_up(m, 8)
-        round_k = round_up(k, 8)
-        stride_trans_a = round_m * round_k
-        stride_trans_b = round_n * round_k
-        stride_trans_c = round_m * round_n
-        trans_a = allocator.alloc( stride_trans_a * a.shape[0] )
-        trans_b = allocator.alloc( stride_trans_b * b.shape[0] )
-        trans_c = allocator.alloc( ctypes.sizeof(ctypes.c_int32) * stride_trans_c * c.shape[0] )
-
-        layout_trans_a, layout_trans_b, layout_trans_c = cublasLt.cublasLtMatrixLayout_t(), cublasLt.cublasLtMatrixLayout_t(), cublasLt.cublasLtMatrixLayout_t()
-        cublasLt.checkCublasStatus( cublasLt.cublasLtMatrixLayoutCreate(layout_trans_a, cublasLt.CUDA_R_8I, m, k, round_m) )
-        cublasLt.checkCublasStatus( cublasLt.cublasLtMatrixLayoutSetAttribute(layout_trans_a, cublasLt.CUBLASLT_MATRIX_LAYOUT_BATCH_COUNT, ctypes.byref(ctypes.c_int32(a.shape[0])), ctypes.sizeof(ctypes.c_int32)) )
-        cublasLt.checkCublasStatus( cublasLt.cublasLtMatrixLayoutSetAttribute(layout_trans_a, cublasLt.CUBLASLT_MATRIX_LAYOUT_STRIDED_BATCH_OFFSET, ctypes.byref(ctypes.c_int64(stride_trans_a)), ctypes.sizeof(ctypes.c_int64)) )
-
-        cublasLt.checkCublasStatus( cublasLt.cublasLtMatrixLayoutCreate(layout_trans_b, cublasLt.CUDA_R_8I, k, n, round_k) )
-        cublasLt.checkCublasStatus( cublasLt.cublasLtMatrixLayoutSetAttribute(layout_trans_b, cublasLt.CUBLASLT_MATRIX_LAYOUT_BATCH_COUNT, ctypes.byref(ctypes.c_int32(b.shape[0])), ctypes.sizeof(ctypes.c_int32)) )
-        cublasLt.checkCublasStatus( cublasLt.cublasLtMatrixLayoutSetAttribute(layout_trans_b, cublasLt.CUBLASLT_MATRIX_LAYOUT_STRIDED_BATCH_OFFSET, ctypes.byref(ctypes.c_int64(stride_trans_b)), ctypes.sizeof(ctypes.c_int64)) )
-
-        cublasLt.checkCublasStatus( cublasLt.cublasLtMatrixLayoutCreate(layout_trans_c, cublasLt.CUDA_R_32I, m, n, round_m) )
-        cublasLt.checkCublasStatus( cublasLt.cublasLtMatrixLayoutSetAttribute(layout_trans_c, cublasLt.CUBLASLT_MATRIX_LAYOUT_BATCH_COUNT, ctypes.byref(ctypes.c_int32(c.shape[0])), ctypes.sizeof(ctypes.c_int32)) )
-        cublasLt.checkCublasStatus( cublasLt.cublasLtMatrixLayoutSetAttribute(layout_trans_c, cublasLt.CUBLASLT_MATRIX_LAYOUT_STRIDED_BATCH_OFFSET, ctypes.byref(ctypes.c_int64(stride_trans_c)), ctypes.sizeof(ctypes.c_int64)) )
-
-        transform_desc_a = cublasLt.cublasLtMatrixTransformDesc_t()
-        cublasLt.checkCublasStatus( cublasLt.cublasLtMatrixTransformDescCreate(transform_desc_a, cublasLt.CUDA_R_32I) )
+        assert m % 4 == 0
+        assert n % 4 == 0
+        assert k % 4 == 0
+        matmul_desc = cublasLt.cublasLtMatmulDesc_t()
+        if cublasLt.VERSION == 10:
+            cublasLt.checkCublasStatus( cublasLt.cublasLtMatmulDescCreate(matmul_desc, cublasLt.CUDA_R_32I) )
+        else:
+            cublasLt.checkCublasStatus( cublasLt.cublasLtMatmulDescCreate(matmul_desc, cublasLt.CUBLAS_COMPUTE_32I, cublasLt.CUDA_R_32I) )
         if aT:
-            cublasLt.checkCublasStatus( cublasLt.cublasLtMatrixTransformDescSetAttribute(
-                transform_desc_a,
-                cublasLt.CUBLASLT_MATRIX_TRANSFORM_DESC_TRANSA, 
-                ctypes.byref( ctypes.c_int32(cublasLt.CUBLAS_OP_T)),
-                ctypes.sizeof(ctypes.c_int32)
-            ) )
-        
-
-        transform_desc_b = cublasLt.cublasLtMatrixTransformDesc_t()
-        cublasLt.checkCublasStatus( cublasLt.cublasLtMatrixTransformDescCreate(transform_desc_b, cublasLt.CUDA_R_32I) )
+            cublasLt.checkCublasStatus( cublasLt.cublasLtMatmulDescSetAttribute(matmul_desc, cublasLt.CUBLASLT_MATMUL_DESC_TRANSA, ctypes.byref( ctypes.c_int32(cublasLt.CUBLAS_OP_T)), ctypes.sizeof(ctypes.c_int32)) )
         if bT:
-            cublasLt.checkCublasStatus( cublasLt.cublasLtMatrixTransformDescSetAttribute(
-                transform_desc_b,
-                cublasLt.CUBLASLT_MATRIX_TRANSFORM_DESC_TRANSA, 
-                ctypes.byref( ctypes.c_int32(cublasLt.CUBLAS_OP_T)),
-                ctypes.sizeof(ctypes.c_int32)
-            ) )
+            cublasLt.checkCublasStatus( cublasLt.cublasLtMatmulDescSetAttribute(matmul_desc, cublasLt.CUBLASLT_MATMUL_DESC_TRANSB, ctypes.byref( ctypes.c_int32(cublasLt.CUBLAS_OP_T)), ctypes.sizeof(ctypes.c_int32)) )
         
-    transform_desc_c = cublasLt.cublasLtMatrixTransformDesc_t()
-    cublasLt.checkCublasStatus( cublasLt.cublasLtMatrixTransformDescCreate(transform_desc_c, cublasLt.CUDA_R_32I) )
-
-    cublasLt.checkCublasStatus( cublasLt.cublasLtMatrixTransform(lthandle, transform_desc_a, ctypes.byref(ctypes.c_int32(1)), a.data.ptr, layout_a, ctypes.byref(ctypes.c_int32(0)), 0, 0, trans_a.ptr, layout_trans_a, stream.ptr) )
-    cublasLt.checkCublasStatus( cublasLt.cublasLtMatrixTransform(lthandle, transform_desc_b, ctypes.byref(ctypes.c_int32(1)), b.data.ptr, layout_b, ctypes.byref(ctypes.c_int32(0)), 0, 0, trans_b.ptr, layout_trans_b, stream.ptr) )
-
-    cublasLt.checkCublasStatus( cublasLt.cublasLtMatrixLayoutSetAttribute(layout_trans_a, cublasLt.CUBLASLT_MATRIX_LAYOUT_BATCH_COUNT, ctypes.byref(ctypes.c_int32(num_batch)), ctypes.sizeof(ctypes.c_int32)) )
-    if a.shape[0] != num_batch:
-        cublasLt.checkCublasStatus( cublasLt.cublasLtMatrixLayoutSetAttribute(layout_trans_a, cublasLt.CUBLASLT_MATRIX_LAYOUT_STRIDED_BATCH_OFFSET, ctypes.byref(ctypes.c_int64(0)), ctypes.sizeof(ctypes.c_int64)) )
-    cublasLt.checkCublasStatus( cublasLt.cublasLtMatrixLayoutSetAttribute(layout_trans_b, cublasLt.CUBLASLT_MATRIX_LAYOUT_BATCH_COUNT, ctypes.byref(ctypes.c_int32(num_batch)), ctypes.sizeof(ctypes.c_int32)) )
-    if b.shape[0] != num_batch:
-        cublasLt.checkCublasStatus( cublasLt.cublasLtMatrixLayoutSetAttribute(layout_trans_b, cublasLt.CUBLASLT_MATRIX_LAYOUT_STRIDED_BATCH_OFFSET, ctypes.byref(ctypes.c_int64(0)), ctypes.sizeof(ctypes.c_int64)) )
-    matmul_desc = cublasLt.cublasLtMatmulDesc_t()
-    
-    if cublasLt.VERSION == 10:
-        cublasLt.checkCublasStatus( cublasLt.cublasLtMatmulDescCreate(matmul_desc, cublasLt.CUDA_R_32I) )
-    else:
-        cublasLt.checkCublasStatus( cublasLt.cublasLtMatmulDescCreate(matmul_desc, cublasLt.CUBLAS_COMPUTE_32I, cublasLt.CUDA_R_32I) )
-    if cc >= 75:
-        cublasLt.checkCublasStatus( cublasLt.cublasLtMatmulDescSetAttribute(matmul_desc, cublasLt.CUBLASLT_MATMUL_DESC_TRANSB, ctypes.byref( ctypes.c_int32(cublasLt.CUBLAS_OP_T)), ctypes.sizeof(ctypes.c_int32)) )
-
-    cublasLt.checkCublasStatus( cublasLt.cublasLtMatmul(
-        lthandle, 
-        matmul_desc, 
-        ctypes.byref(ctypes.c_int32(1)), 
-        trans_a.ptr, 
-        layout_trans_a, 
-        trans_b.ptr, 
-        layout_trans_b, 
-        ctypes.byref(ctypes.c_int32(0)), 
-        trans_c.ptr,
-        layout_trans_c,
-        trans_c.ptr,
-        layout_trans_c,
-        0,
-        0,
-        0,
-        stream.ptr
-    ))
-    cublasLt.checkCublasStatus(cublasLt.cublasLtMatrixTransform(lthandle, transform_desc_c, ctypes.byref(ctypes.c_int32(1)), trans_c.ptr, layout_trans_c, ctypes.byref(ctypes.c_int32(0)), 0, 0, c.data.ptr, layout_c, stream.ptr))
+        cublasLt.checkCublasStatus( cublasLt.cublasLtMatrixLayoutSetAttribute(layout_a, cublasLt.CUBLASLT_MATRIX_LAYOUT_BATCH_COUNT, ctypes.byref(ctypes.c_int32(num_batch)), ctypes.sizeof(ctypes.c_int32)) )
+        if a.shape[0] != num_batch:
+            cublasLt.checkCublasStatus( cublasLt.cublasLtMatrixLayoutSetAttribute(layout_a, cublasLt.CUBLASLT_MATRIX_LAYOUT_STRIDED_BATCH_OFFSET, ctypes.byref(ctypes.c_int64(0)), ctypes.sizeof(ctypes.c_int64)) )
+        cublasLt.checkCublasStatus( cublasLt.cublasLtMatrixLayoutSetAttribute(layout_b, cublasLt.CUBLASLT_MATRIX_LAYOUT_BATCH_COUNT, ctypes.byref(ctypes.c_int32(num_batch)), ctypes.sizeof(ctypes.c_int32)) )
+        if b.shape[0] != num_batch:
+            cublasLt.checkCublasStatus( cublasLt.cublasLtMatrixLayoutSetAttribute(layout_b, cublasLt.CUBLASLT_MATRIX_LAYOUT_STRIDED_BATCH_OFFSET, ctypes.byref(ctypes.c_int64(0)), ctypes.sizeof(ctypes.c_int64)) )
+        
+        cublasLt.checkCublasStatus( cublasLt.cublasLtMatmul(
+            lthandle, 
+            matmul_desc, 
+            ctypes.byref(ctypes.c_int32(1)), 
+            a.data.ptr, 
+            layout_a, 
+            b.data.ptr, 
+            layout_b, 
+            ctypes.byref(ctypes.c_int32(0)), 
+            c.data.ptr,
+            layout_c,
+            c.data.ptr,
+            layout_c,
+            0,
+            0,
+            0,
+            stream.ptr
+        ))
+    cublasLt.checkCublasStatus(cublasLt.cublasLtMatmulDescDestroy(matmul_desc))
     cublasLt.checkCublasStatus(cublasLt.cublasLtMatrixLayoutDestroy(layout_a))
     cublasLt.checkCublasStatus(cublasLt.cublasLtMatrixLayoutDestroy(layout_b))
     cublasLt.checkCublasStatus(cublasLt.cublasLtMatrixLayoutDestroy(layout_c))
-    cublasLt.checkCublasStatus(cublasLt.cublasLtMatrixLayoutDestroy(layout_trans_a))
-    cublasLt.checkCublasStatus(cublasLt.cublasLtMatrixLayoutDestroy(layout_trans_b))
-    cublasLt.checkCublasStatus(cublasLt.cublasLtMatrixLayoutDestroy(layout_trans_c))
-    cublasLt.checkCublasStatus(cublasLt.cublasLtMatmulDescDestroy(matmul_desc))
-    cublasLt.checkCublasStatus(cublasLt.cublasLtMatrixTransformDescDestroy(transform_desc_a))
-    cublasLt.checkCublasStatus(cublasLt.cublasLtMatrixTransformDescDestroy(transform_desc_b))
-    cublasLt.checkCublasStatus(cublasLt.cublasLtMatrixTransformDescDestroy(transform_desc_c))
-    
 
-        
-
-def round_matrix(x):
-    m, n = x.shape
-    round_n = round_up(n, 16)
-    round_m = round_up(m, 16)
-    if round_n == n and round_m == m:
-        return x
-    
-    nw_x = cupy.zeros( (round_m, round_n), dtype=x.dtype )
-    nw_x[:m, :n] = x
-    logger.info("Round matrix (%d, %d) -> (%d, %d)", m, n, round_m, round_n)
-    return nw_x
-
-
-    
-
-def _igemm(a, aT, b, bT, out):
-    assert isinstance(a, cupy.ndarray)
-    assert isinstance(b, cupy.ndarray)
-    assert isinstance(out, cupy.ndarray)
-    assert len(a.shape) == 2
-    assert len(b.shape) == 2
-    assert len(out.shape) == 2
-    assert a._c_contiguous
-    assert b._c_contiguous
-    assert out._c_contiguous
-    assert a.device == b.device
-    assert b.device == out.device
-    device = a.device
-    cublas_version = cublas.getVersion(device.cublas_handle)
-
-
-    if aT:
-        k1, m = a.shape
-        transA = cublas.CUBLAS_OP_N
-    else:
-        m, k1 = a.shape
-        transA = cublas.CUBLAS_OP_T
-
-    if bT:
-        n, k2 = b.shape
-        transB = cublas.CUBLAS_OP_N
-    else:
-        k2, n = b.shape
-        transB = cublas.CUBLAS_OP_T
-    assert k1 == k2
-    k = k1
-    assert a.dtype == b.dtype
-    assert out.shape[0] == n
-    assert out.shape[1] == m
-    if a.dtype == cupy.int8:
-        type_in = cupy.cuda.runtime.CUDA_R_8I
-    else:
-        raise TypeError("Unknown type %s for gemm" % a.dtype)
-    
-    if out.dtype == cupy.int32:
-        type_out = 10   # CUDA_R_32I
-        if cublas_version >= 11000:
-            ct = cublas.CUBLAS_COMPUTE_32I
-        else:
-            ct = 10
-    else:
-        raise TypeError("Unknown type %s for gemm" % out.dtype)
-
-    lda = m if aT else k
-    ldb = k if bT else n
-    ldc = m
-
-    if m % 8 != 0:
-        logger.warning("[WARN] igemm m % 8 != 0")
-    if k % 8 != 0:
-        logger.warning("[WARN] igemm k % 8 != 0")
-    if not (bT or n % 8 == 0):
-        logger.warning("[WARN] igemm n % 8 != 0 and bT == False")
-    if a.data.ptr % 16 != 0:
-        logger.warning("[WARN] igemm intptr_t(A) % 16 != 0")
-    if b.data.ptr % 16 != 0:
-        logger.warning("[WARN] igemm intptr_t(B) % 16 != 0")
-    if out.data.ptr % 16 != 0:
-        logger.warning("[WARN] igemm intptr_t(C) % 16 != 0")
-    if lda % 16 != 0:
-        logger.warning("[WARN] igemm lda % 16 != 0")
-    if ldb % 16 != 0:
-        logger.warning("[WARN] igemm ldb % 16 != 0")
-    if ldc % 16 != 0:
-        logger.warning("[WARN] igemm ldc % 16 != 0")
-    
-    one = np.array(1, dtype=np.int32)
-    zero = np.array(0, dtype=np.int32)
-    cublas.gemmEx(
-        device.cublas_handle, 
-        transA,
-        transB,
-        m, n, k,
-        one.ctypes.data,
-        a.data.ptr,
-        type_in,
-        lda,
-        b.data.ptr,
-        type_in,
-        ldb,
-        zero.ctypes.data,
-        out.data.ptr,
-        type_out,
-        ldc,
-        ct,
-        cublas.CUBLAS_GEMM_DEFAULT
-    )
 
 def sgemmBatched(a, aT, b, bT, out):
     assert isinstance(a, cupy.ndarray)
