@@ -1,4 +1,5 @@
 import cupy
+from .cublaslt import cublasLt
 
 if hasattr(cupy, "_core"):
     core = cupy._core
