@@ -2,7 +2,7 @@ import cupy
 import numpy as np
 import logging
 from ..utils import round_up
-from ..backend import cublasLt
+from ..backend import cublasLt, cublas
 from ..allocator import Allocator
 import ctypes
 
@@ -283,17 +283,17 @@ def sgemmBatched(a, aT, b, bT, out):
     
     if aT:
         batch1, k1, m = a.shape
-        transA = cublas.CUBLAS_OP_N
+        transA = cublasLt.CUBLAS_OP_N
     else:
         batch1, m, k1 = a.shape
-        transA = cublas.CUBLAS_OP_T
+        transA = cublasLt.CUBLAS_OP_T
 
     if bT:
         batch2, n, k2 = b.shape
-        transB = cublas.CUBLAS_OP_N
+        transB = cublasLt.CUBLAS_OP_N
     else:
         batch2, k2, n = b.shape
-        transB = cublas.CUBLAS_OP_T
+        transB = cublasLt.CUBLAS_OP_T
     
     assert k1 == k2
     assert batch1 == batch2

@@ -32,9 +32,7 @@ class EncoderKeyValueProjection(Layer):
 
         out_i32 = allocator.alloc_array((batch_size, self.num_decoder * self.dim_kv * self.num_heads * 2, seq_len), cupy.int32)
         
-        # FIXME: igemm Stried Batched cupy
-        for i in range(batch_size):
-            igemm(value_i8[i], True, self.w_project_kv.value, True, out_i32[i])
+        igemm(allocator, value_i8, False, self.w_project_kv.value[cupy.newaxis], False, out_i32)
         
         out_f32 = allocator.alloc_array(out_i32.shape, cupy.float32)
         elementwise_copy_scale(out_i32, scale, self.w_project_kv_scale.value, out_f32)

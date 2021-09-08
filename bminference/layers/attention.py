@@ -51,14 +51,14 @@ class SelfAttention(Layer):
         value, scale = self.quantize(allocator, hidden_state, axis=1) 
         # FIXME: cupy cublasGemmStridedBatchedEx
         qkv_i32 = allocator.alloc_array((batch_size, 3 * self.num_heads * self.dim_qkv, seq_len), dtype=cupy.int32)
-        for i in range(batch_size):
-            igemm(
-                value[i],
-                True,
-                self.w_project_qkv.value,
-                True,
-                qkv_i32[i]
-            )
+        igemm(
+            allocator,
+            value,
+            False,
+            self.w_project_qkv.value[cupy.newaxis],
+            False,
+            qkv_i32
+        )
         # release value
         del value
 
@@ -129,8 +129,7 @@ class SelfAttention(Layer):
         out_i8, scale = self.quantize(allocator, out, axis=1) 
 
         project_out_i32 = allocator.alloc_array((batch_size, dim_in, seq_len), dtype=cupy.int32)
-        for i in range(batch_size):
-            igemm(out_i8[i], True, self.w_out.value, True, out=project_out_i32[i])
+        igemm(allocator, out_i8, False, self.w_out.value[cupy.newaxis], False, project_out_i32)
         
         assert project_out_i32._c_contiguous
         project_out_f16 = allocator.alloc_array(project_out_i32.shape, dtype=cupy.float16)
@@ -206,19 +205,21 @@ class PartialAttention(Layer):
         
         if self.is_self_attn:
             igemm(
-                self.w_project_qkv.value,
-                False,
-                value,
+                allocator,
+                self.w_project_qkv.value[cupy.newaxis],
                 True,
-                qkv_i32[:, :, 0]
+                value[cupy.newaxis],
+                False,
+                qkv_i32[cupy.newaxis, :, :, 0]
             )
         else:
             igemm(
-                self.w_project_q.value,
-                False,
-                value,
+                allocator,
+                self.w_project_q.value[cupy.newaxis],
                 True,
-                qkv_i32[:, :, 0]
+                value[cupy.newaxis],
+                False,
+                qkv_i32[cupy.newaxis, :, :, 0]
             )
         # release value
         del value
@@ -303,11 +304,12 @@ class PartialAttention(Layer):
         project_out_i32 = allocator.alloc_array((batch_size, dim_model, 1), dtype=cupy.int32)
 
         igemm(
-            self.w_out.value, 
-            False, 
-            out_i8, 
+            allocator,
+            self.w_out.value[cupy.newaxis], 
             True, 
-            out=project_out_i32[:, :, 0]
+            out_i8[cupy.newaxis], 
+            False, 
+            project_out_i32[cupy.newaxis, :, :, 0]
         )
         
         assert project_out_i32._c_contiguous
