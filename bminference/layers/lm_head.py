@@ -2,7 +2,7 @@ from .base import Layer
 from ..parameter import Parameter
 from ..allocator import Allocator
 import cupy
-from ..functions.gemm import sgemmBatched
+from ..functions.gemm import fgemm
 
 class LMHead(Layer):
     def __init__(self, vocab_size, dim_model):
@@ -14,5 +14,8 @@ class LMHead(Layer):
         # call function linear
         batch_size, dim_model = x.shape
         assert dim_model == self.dim_model
+        
+        ret = allocator.alloc_array((1, batch_size, self.vocab_size), dtype=cupy.float16)
+        fgemm(allocator, self.weight.value[cupy.newaxis], True, x[cupy.newaxis], False, ret)
 
-        return cupy.matmul(x, self.weight.value.T)
+        return ret[0]

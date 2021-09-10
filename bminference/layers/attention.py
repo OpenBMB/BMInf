@@ -7,7 +7,7 @@ from .base import Layer
 import cupy
 from ..functions.quantization import quantize
 from ..functions.scale_copy import elementwise_copy_scale
-from ..functions.gemm import igemm, sgemmBatched
+from ..functions.gemm import igemm, fgemm
 from ..functions.attention_mask import mask_attention_kernel
 
 class SelfAttention(Layer):
@@ -62,35 +62,36 @@ class SelfAttention(Layer):
         # release value
         del value
 
-        # convert int32 to fp32
+        # convert int32 to fp16
         assert qkv_i32._c_contiguous
-        qkv_f32 = cupy.ndarray( qkv_i32.shape, dtype=cupy.float32, memptr=qkv_i32.data )
+        qkv_f16 = allocator.alloc_array( qkv_i32.shape, dtype=cupy.float16 )
         
         elementwise_copy_scale(
             qkv_i32, 
             self.w_project_qkv_scale.value,   # (dim_qkv * num_heads * 3, 1)
             scale,     # (batch_size, 1, seq_len)
-            out=qkv_f32
+            out=qkv_f16
         )
         del qkv_i32
 
         # reshape
-        assert qkv_f32._c_contiguous
-        qkv = cupy.ndarray( (batch_size, 3, self.num_heads, self.dim_qkv, seq_len), dtype=cupy.float32, memptr=qkv_f32.data )
-        del qkv_f32
+        assert qkv_f16._c_contiguous
+        qkv = cupy.ndarray( (batch_size, 3, self.num_heads, self.dim_qkv, seq_len), dtype=cupy.float16, memptr=qkv_f16.data )
+        del qkv_f16
         # qkv: batch, 3, num_heads, dim_qkv，seq
         # calc attention score
-        attention_score = allocator.alloc_array((batch_size, self.num_heads, seq_len, seq_len), dtype=cupy.float32)
+        attention_score = allocator.alloc_array((batch_size, self.num_heads, seq_len, seq_len), dtype=cupy.float16)
+
         for i in range(batch_size):
             # (dim_qkv, seq_q)T @ (dim_qkv, seq_k) = (seq_q, seq_k)
-            sgemmBatched(qkv[i][0], True, qkv[i][1], False, attention_score[i])
+            fgemm(allocator, qkv[i][0], False, qkv[i][1], True, attention_score[i])
         
         # attention_score: batch, num_heads, s_k, s_q
         # add bias
         mask_attention_kernel(
             attention_mask[:, cupy.newaxis, :, :],  # (batch, 1#num_heads, seq_len, seq_len)
             attention_score, 
-            cupy.float32(-1e10), 
+            cupy.float16(-1e10), 
             out=attention_score
         )
         
@@ -98,7 +99,7 @@ class SelfAttention(Layer):
             attention_score += self_attn_position_bias
 
         # softmax
-        temp_attn_mx = allocator.alloc_array((batch_size, self.num_heads, 1, seq_len), dtype=cupy.float32)
+        temp_attn_mx = allocator.alloc_array((batch_size, self.num_heads, 1, seq_len), dtype=cupy.float16)
         cupy.max(attention_score, axis=-2, out=temp_attn_mx, keepdims=True)
         attention_score -= temp_attn_mx
         cupy.exp(attention_score, out=attention_score)
@@ -112,16 +113,16 @@ class SelfAttention(Layer):
         # calc value
         # batch, num_heads, s_q, s_k @ batch, num_heads, s_v, dim_value -> batch, num_heads, s_q, dim_qkv
         # attention_score: batch, num_heads, s_q, s_k
-        out_raw = allocator.alloc_array((batch_size, self.num_heads, self.dim_qkv, seq_len), dtype=cupy.float32)
+        out_raw = allocator.alloc_array((batch_size, self.num_heads, self.dim_qkv, seq_len), dtype=cupy.float16)
         for i in range(batch_size):
             attn = attention_score[i] # num_heads, s_k, s_q
             val = qkv[i][2]    # num_heads, dim_qkv，s_v(s_k)
 
             # (s_k, s_q)T @ (dim_qkv，s_k)T = (s_q, dim_qkv)
-            sgemmBatched(attn, True, val, True, out=out_raw[i])
+            fgemm(allocator, attn, False, val, False, out_raw[i])
         assert out_raw._c_contiguous
         # reshape
-        out = cupy.ndarray((batch_size, self.num_heads * self.dim_qkv, seq_len), dtype=cupy.float32, memptr=out_raw.data)
+        out = cupy.ndarray((batch_size, self.num_heads * self.dim_qkv, seq_len), dtype=cupy.float16, memptr=out_raw.data)
         del attention_score
         del out_raw
 
@@ -180,7 +181,7 @@ class PartialAttention(Layer):
         batch_size, dim_model = curr_hidden_state.shape
         num_heads, dim_qkv, past_kv_len = past_kv.shape[2:]
         assert past_kv.shape == (batch_size, 2, num_heads, dim_qkv, past_kv_len)
-        assert past_kv.dtype == cupy.float32
+        assert past_kv.dtype == cupy.float16
         assert num_heads == self.num_heads
         assert dim_qkv == self.dim_qkv
 
@@ -224,52 +225,53 @@ class PartialAttention(Layer):
         # release value
         del value
 
-        # convert int32 to fp32
+        # convert int32 to fp16
         assert qkv_i32._c_contiguous
-        qkv_f32 = cupy.ndarray( qkv_i32.shape, dtype=cupy.float32, memptr=qkv_i32.data )
+        qkv_f16 = allocator.alloc_array( qkv_i32.shape, dtype=cupy.float16 )
 
         if self.is_self_attn:
             elementwise_copy_scale(
                 qkv_i32, 
                 self.w_project_qkv_scale.value,   # (1#batch_size, dim_qkv * num_heads * 3, 1)
                 scale[:, :, cupy.newaxis],     # (batch_size, 1, 1)
-                out=qkv_f32
+                out=qkv_f16
             )
         else:
             elementwise_copy_scale(
                 qkv_i32, 
                 self.w_project_q_scale.value,   # (dim_qkv * num_heads, 1)
                 scale[:, :, cupy.newaxis],     # (batch_size, 1, 1)
-                out=qkv_f32
+                out=qkv_f16
             )
         del qkv_i32
         # reshape
-        assert qkv_f32._c_contiguous
+        assert qkv_f16._c_contiguous
         if self.is_self_attn:
-            qkv = cupy.ndarray( (batch_size, 3, self.num_heads, self.dim_qkv), dtype=cupy.float32, memptr=qkv_f32.data )
+            qkv = cupy.ndarray( (batch_size, 3, self.num_heads, self.dim_qkv), dtype=cupy.float16, memptr=qkv_f16.data )
             query = qkv[:, 0, :, :] # (batch, num_heads, dim_qkv)
             past_kv[:, 0, :, :, decoder_length] = qkv[:, 1, :, :]
             past_kv[:, 1, :, :, decoder_length] = qkv[:, 2, :, :]
             del qkv
         else:
-            query = cupy.ndarray( (batch_size, self.num_heads, self.dim_qkv), dtype=cupy.float32, memptr=qkv_f32.data )
-        del qkv_f32
+            query = cupy.ndarray( (batch_size, self.num_heads, self.dim_qkv), dtype=cupy.float16, memptr=qkv_f16.data )
+        del qkv_f16
 
         # calc attention score
-        attention_score = allocator.alloc_array((batch_size, self.num_heads, past_kv_len, 1), dtype=cupy.float32)
+        attention_score = allocator.alloc_array((batch_size, self.num_heads, past_kv_len, 1), dtype=cupy.float16)
         for i in range(batch_size):
-            sgemmBatched(
+            fgemm(
+                allocator,
                 query[i, :, :, cupy.newaxis],  # (num_heads, dim_qkv, 1)
-                True,
-                past_kv[i, 0], #(num_heads, dim_qkv, past_kv_len)
                 False,
+                past_kv[i, 0], #(num_heads, dim_qkv, past_kv_len)
+                True,
                 attention_score[i]  # (num_heads, past_kv_len, 1)
             )
         # mask
         mask_attention_kernel(
             past_kv_mask[:, cupy.newaxis, :, cupy.newaxis], # (batch, 1#num_heads, past_kv_len, 1)
             attention_score,
-            cupy.float32(-1e10),
+            cupy.float16(-1e10),
             out=attention_score             # (batch_size, self.num_heads, past_kv_len, 1)
         )
         
@@ -277,7 +279,7 @@ class PartialAttention(Layer):
             attention_score += position_bias[:, :, :, cupy.newaxis] # (1#batch, num_heads, past_kv_len, 1)
         
         # softmax
-        temp_attn_mx = allocator.alloc_array((batch_size, self.num_heads, 1, 1), dtype=cupy.float32)
+        temp_attn_mx = allocator.alloc_array((batch_size, self.num_heads, 1, 1), dtype=cupy.float16)
         cupy.max(attention_score, axis=-2, out=temp_attn_mx, keepdims=True)
         attention_score -= temp_attn_mx
         cupy.exp(attention_score, out=attention_score)
@@ -286,15 +288,15 @@ class PartialAttention(Layer):
         attention_score /= temp_attn_mx
         del temp_attn_mx
 
-        out_raw = allocator.alloc_array((batch_size, self.num_heads, self.dim_qkv, 1), dtype=cupy.float32)
+        out_raw = allocator.alloc_array((batch_size, self.num_heads, self.dim_qkv, 1), dtype=cupy.float16)
         for i in range(batch_size):
             attn = attention_score[i]   # (num_heads, past_kv_len, 1）
             val = past_kv[i, 1]         # (num_heads, dim_qkv, past_kv_len)
 
-            sgemmBatched(attn, True, val, True, out=out_raw[i])
+            fgemm(allocator, attn, False, val, False, out_raw[i])
         assert out_raw._c_contiguous
 
-        out = cupy.ndarray((batch_size, self.num_heads * self.dim_qkv), dtype=cupy.float32, memptr=out_raw.data)
+        out = cupy.ndarray((batch_size, self.num_heads * self.dim_qkv), dtype=cupy.float16, memptr=out_raw.data)
         del attention_score
         del out_raw
 

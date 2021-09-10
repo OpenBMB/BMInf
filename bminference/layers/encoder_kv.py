@@ -34,14 +34,14 @@ class EncoderKeyValueProjection(Layer):
         
         igemm(allocator, value_i8, False, self.w_project_kv.value[cupy.newaxis], False, out_i32)
         
-        out_f32 = allocator.alloc_array(out_i32.shape, cupy.float32)
-        elementwise_copy_scale(out_i32, scale, self.w_project_kv_scale.value, out_f32)
+        out_f16 = allocator.alloc_array(out_i32.shape, cupy.float16)
+        elementwise_copy_scale(out_i32, scale, self.w_project_kv_scale.value, out_f16)
         
-        assert out_f32._c_contiguous
+        assert out_f16._c_contiguous
 
-        reshaped_out_f32 = cupy.ndarray(
+        reshaped_out_f16 = cupy.ndarray(
             (batch_size, self.num_decoder, 2, self.num_heads, self.dim_kv, seq_len),
-            dtype=out_f32.dtype,
-            memptr=out_f32.data
+            dtype=out_f16.dtype,
+            memptr=out_f16.data
         )
-        return reshaped_out_f32
+        return reshaped_out_f16

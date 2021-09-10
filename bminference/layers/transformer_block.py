@@ -95,12 +95,12 @@ class TransformerBlockDecoder(Layer):
 
         max_decoder_length = past_kv.shape[-1]
         assert past_kv.shape == (batch_size, 2, self.num_heads, self.dim_qkv, max_decoder_length)
-        assert past_kv.dtype == cupy.float32
+        assert past_kv.dtype == cupy.float16
 
         encoder_len = encoder_kv.shape[-1]
         assert encoder_kv.shape == (batch_size, 2, self.num_heads, self.dim_qkv, encoder_len)
         assert encoder_mask.shape == (batch_size, encoder_len)
-        assert encoder_kv.dtype == cupy.float32
+        assert encoder_kv.dtype == cupy.float16
 
         # ==================================
         # self attention

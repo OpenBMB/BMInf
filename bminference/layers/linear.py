@@ -33,6 +33,6 @@ class Linear(Layer):
         # FIXME: igemm Stried Batched cupy
         igemm(allocator, value_i8, False, self.weight.value[cupy.newaxis], False, out_i32)
         
-        out_f32 = allocator.alloc_array(out_i32.shape, cupy.float16)
-        elementwise_copy_scale(out_i32, scale, self.weight_scale.value, out_f32)
-        return out_f32
+        out_f16 = allocator.alloc_array(out_i32.shape, cupy.float16)
+        elementwise_copy_scale(out_i32, scale, self.weight_scale.value, out_f16)
+        return out_f16

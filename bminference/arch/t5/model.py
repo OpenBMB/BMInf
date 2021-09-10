@@ -17,7 +17,6 @@ from ...allocator import ReusedAllocator, SizeLimitedAllocator
 import numpy as np
 import logging
 from ... import data
-from ...utils import round_up
 
 logger = logging.getLogger(__name__)
 
@@ -212,16 +211,6 @@ class T5(Seq2SeqModel):
             calc_stream = self.calc_stream
 
             batch_size, seq_len = input_idx.shape
-
-            if seq_len % 16 != 0:
-                nw_seq_len = round_up(seq_len, 16)  # round up
-                nw_input_idx = np.zeros((batch_size, nw_seq_len), dtype=np.int64)
-                nw_input_idx[:, :seq_len] = input_idx
-                seq_len = nw_seq_len
-                input_idx = nw_input_idx
-                del nw_seq_len
-                del nw_input_idx
-
             with calc_stream:
                 x = self.input_embedding.forward(self.variable_allocator, input_idx)
                 encoder_attn_mask = self.input_mask.forward(self.variable_allocator, input_length, seq_len)
@@ -274,7 +263,7 @@ class T5(Seq2SeqModel):
                     self.max_decoder_length
                 )
 
-                past_kv = self.variable_allocator.alloc_array((self.num_decoder, batch_size, 2, self.num_heads, self.dim_qkv, self.max_decoder_length), dtype=cupy.float32)
+                past_kv = self.variable_allocator.alloc_array((self.num_decoder, batch_size, 2, self.num_heads, self.dim_qkv, self.max_decoder_length), dtype=cupy.float16)
                 past_kv[:] = 0
                 
                 encoder_mask = self.input_mask.forward(self.variable_allocator, input_length, seq_ipt_len)[:, :, 0]
