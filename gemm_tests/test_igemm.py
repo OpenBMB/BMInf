@@ -1,4 +1,4 @@
-from bminference import allocator
+from tqdm import tqdm
 from bminference.allocator import SizeLimitedAllocator
 from bminference.functions.gemm import igemm
 import cupy
@@ -59,13 +59,12 @@ def test(a, b, m, k, n):
     
 def main():
     allocator = SizeLimitedAllocator(1024 * 1024 * 1024 * 4)
-    for i in range(3200):
+    for i in tqdm(range(3200)):
         b = random.randint(1, 128)
         m = random.randint(1, 1024)
         k = random.randint(1, 1024)
         n = random.randint(1, 1024)
         test(allocator, b, m, k, n)
-        print(allocator._pool.used_bytes(), allocator._pool.total_bytes())
 
 if __name__ == "__main__":
     main()
