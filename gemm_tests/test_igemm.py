@@ -29,8 +29,6 @@ def test(a, b, m, k, n):
 
     mc = cupy.ndarray((b, n, m), dtype=cupy.int32)
     igemm(a, ma, aT, mb, bT, mc)
-    mc.device.synchronize()
-    """
     ac = cupy.ndarray((b, n, m), dtype=cupy.int32)
     for i in range(b):
         if ba == 1:
@@ -58,11 +56,9 @@ def test(a, b, m, k, n):
         print(diff.max())
         print(diff)
         from IPython import embed; embed()
-    """
     
 def main():
     allocator = SizeLimitedAllocator(1024 * 1024 * 1024 * 4)
-    """
     for i in range(3200):
         b = random.randint(1, 128)
         m = random.randint(1, 1024)
@@ -70,10 +66,6 @@ def main():
         n = random.randint(1, 1024)
         test(allocator, b, m, k, n)
         print(allocator._pool.used_bytes(), allocator._pool.total_bytes())
-    """
-    from tqdm import tqdm
-    for i in tqdm(range(3200)):
-        test(allocator, 128, 1023, 1023, 1023)
 
 if __name__ == "__main__":
     main()

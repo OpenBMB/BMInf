@@ -37,8 +37,6 @@ def test(a, b, m, k, n):
 
     mc = cupy.ndarray((b, n, m), dtype=dtype)
     fgemm(a, ma, aT, mb, bT, mc)
-    mc.device.synchronize()
-    return
     ac = cupy.ndarray((b, n, m), dtype=dtype)
     for i in range(b):
         if ba == 1:
@@ -70,17 +68,12 @@ def test(a, b, m, k, n):
     
 def main():
     allocator = SizeLimitedAllocator(1024 * 1024 * 1024 * 4)
-    """
     for i in range(3200):
         b = random.randint(1, 128)
         m = random.randint(1, 1024)
         k = random.randint(1, 1024)
         n = random.randint(1, 1024)
         test(allocator, b, m, k, n)
-    """
-    from tqdm import tqdm
-    for i in tqdm(range(3200)):
-        test(allocator, 128, 1023, 1023, 1023)
 
 if __name__ == "__main__":
     main()

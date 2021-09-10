@@ -341,8 +341,11 @@ def _fgemm(a, aT, b, bT, c, device, stream):
     
     matmul_desc = cublasLt.cublasLtMatmulDesc_t()
     if cublasLt.VERSION == 10:
+        # cublasLt.checkCublasStatus( cublasLt.cublasLtMatmulDescCreate(matmul_desc, cublasLt.CUDA_R_32F) )
         cublasLt.checkCublasStatus( cublasLt.cublasLtMatmulDescCreate(matmul_desc, rt_type) )
     else:
+        # Note: FP32 is faster !
+        # cublasLt.checkCublasStatus( cublasLt.cublasLtMatmulDescCreate(matmul_desc, cublasLt.CUBLAS_COMPUTE_32F, cublasLt.CUDA_R_32F) )
         cublasLt.checkCublasStatus( cublasLt.cublasLtMatmulDescCreate(matmul_desc, ct_type, rt_type) )
     if aT:
         cublasLt.checkCublasStatus( cublasLt.cublasLtMatmulDescSetAttribute(matmul_desc, cublasLt.CUBLASLT_MATMUL_DESC_TRANSA, ctypes.byref( ctypes.c_int32(cublasLt.CUBLAS_OP_T)), ctypes.sizeof(ctypes.c_int32)) )
