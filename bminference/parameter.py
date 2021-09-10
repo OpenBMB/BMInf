@@ -44,10 +44,10 @@ class Parameter:
 
     
     def put_data(self, shape, data : bytes, dtype : np.dtype):
-
+        """
         if not shape == self.__shape:
             raise ValueError("Parameter shape not aligned: requires %s, but got %s" % (self.__shape, shape))
-
+        """
         if dtype != self.__dtype:
             raise ValueError("Parameter dtype error")
         self.data = np.frombuffer(data, self.__dtype)
