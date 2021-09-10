@@ -306,6 +306,8 @@ def _fgemm(a, aT, b, bT, c, device, stream):
         raise ValueError("batch A(%d) != batch B(%d)" % (batch1, batch2))
 
     assert c.shape == (batch,n, m)
+    
+    cc = int(device.compute_capability)
 
     if dtype == cupy.float16:
         rt_type = cublasLt.CUDA_R_16F
@@ -340,19 +342,25 @@ def _fgemm(a, aT, b, bT, c, device, stream):
     cublasLt.checkCublasStatus(cublasLt.cublasLtMatrixLayoutSetAttribute(layout_C, cublasLt.CUBLASLT_MATRIX_LAYOUT_STRIDED_BATCH_OFFSET, ctypes.byref(ctypes.c_int64(stride_c)), ctypes.sizeof(ctypes.c_int64)))
     
     matmul_desc = cublasLt.cublasLtMatmulDesc_t()
-    if cublasLt.VERSION == 10:
-        # cublasLt.checkCublasStatus( cublasLt.cublasLtMatmulDescCreate(matmul_desc, cublasLt.CUDA_R_32F) )
-        cublasLt.checkCublasStatus( cublasLt.cublasLtMatmulDescCreate(matmul_desc, rt_type) )
+    if cc >= 70:
+        # has fp16 tensor core
+        if cublasLt.VERSION == 10:
+            cublasLt.checkCublasStatus( cublasLt.cublasLtMatmulDescCreate(matmul_desc, rt_type) )
+        else:
+            cublasLt.checkCublasStatus( cublasLt.cublasLtMatmulDescCreate(matmul_desc, ct_type, rt_type) )
     else:
-        # Note: FP32 is faster !
-        # cublasLt.checkCublasStatus( cublasLt.cublasLtMatmulDescCreate(matmul_desc, cublasLt.CUBLAS_COMPUTE_32F, cublasLt.CUDA_R_32F) )
-        cublasLt.checkCublasStatus( cublasLt.cublasLtMatmulDescCreate(matmul_desc, ct_type, rt_type) )
+        if cublasLt.VERSION == 10:
+            cublasLt.checkCublasStatus( cublasLt.cublasLtMatmulDescCreate(matmul_desc, cublasLt.CUDA_R_32F) )
+        else:
+            # Note: FP32 is faster !
+            cublasLt.checkCublasStatus( cublasLt.cublasLtMatmulDescCreate(matmul_desc, cublasLt.CUBLAS_COMPUTE_32F, cublasLt.CUDA_R_32F) )
+
     if aT:
         cublasLt.checkCublasStatus( cublasLt.cublasLtMatmulDescSetAttribute(matmul_desc, cublasLt.CUBLASLT_MATMUL_DESC_TRANSA, ctypes.byref( ctypes.c_int32(cublasLt.CUBLAS_OP_T)), ctypes.sizeof(ctypes.c_int32)) )
     if bT:
         cublasLt.checkCublasStatus( cublasLt.cublasLtMatmulDescSetAttribute(matmul_desc, cublasLt.CUBLASLT_MATMUL_DESC_TRANSB, ctypes.byref( ctypes.c_int32(cublasLt.CUBLAS_OP_T)), ctypes.sizeof(ctypes.c_int32)) )
     
-    if dtype == cupy.float32:
+    if dtype == cupy.float32 or cc < 70:
         alpha = ctypes.byref(ctypes.c_float(1))
         beta = ctypes.byref(ctypes.c_float(0))
     elif dtype == cupy.float16:
