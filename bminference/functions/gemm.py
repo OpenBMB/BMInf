@@ -190,8 +190,7 @@ def _igemm(allocator : Allocator, a, aT, b, bT, c, device, stream):
         else:
             cublasLt.checkCublasStatus( cublasLt.cublasLtMatmulDescCreate(matmul_desc, cublasLt.CUBLAS_COMPUTE_32I, cublasLt.CUDA_R_32I) )
 
-        if cc >= 75:
-            cublasLt.checkCublasStatus( cublasLt.cublasLtMatmulDescSetAttribute(matmul_desc, cublasLt.CUBLASLT_MATMUL_DESC_TRANSB, ctypes.byref( ctypes.c_int32(cublasLt.CUBLAS_OP_T)), ctypes.sizeof(ctypes.c_int32)) )
+        cublasLt.checkCublasStatus( cublasLt.cublasLtMatmulDescSetAttribute(matmul_desc, cublasLt.CUBLASLT_MATMUL_DESC_TRANSB, ctypes.byref( ctypes.c_int32(cublasLt.CUBLAS_OP_T)), ctypes.sizeof(ctypes.c_int32)) )
 
         cublasLt.checkCublasStatus( cublasLt.cublasLtMatmul(
             lthandle, 
@@ -262,6 +261,127 @@ def _igemm(allocator : Allocator, a, aT, b, bT, c, device, stream):
     cublasLt.checkCublasStatus(cublasLt.cublasLtMatrixLayoutDestroy(layout_b))
     cublasLt.checkCublasStatus(cublasLt.cublasLtMatrixLayoutDestroy(layout_c))
 
+def fgemm(allocator : Allocator, a, aT, b, bT, c):
+    device = a.device
+    stream = cupy.cuda.get_current_stream()
+    return _fgemm(a, aT, b, bT, c, device, stream)
+
+def _fgemm(a, aT, b, bT, c, device, stream):
+    assert isinstance(a, cupy.ndarray)
+    assert isinstance(b, cupy.ndarray)
+    assert isinstance(c, cupy.ndarray)
+    assert len(a.shape) == 3
+    assert len(b.shape) == 3
+    assert len(c.shape) == 3
+    assert a._c_contiguous
+    assert b._c_contiguous
+    assert c._c_contiguous
+    assert a.device == device
+    assert b.device == device
+    assert c.device == device
+    dtype = a.dtype 
+    assert a.dtype == dtype
+    assert b.dtype == dtype
+    assert c.dtype == dtype
+
+    if aT:
+        batch1, m, k1 = a.shape
+    else:
+        batch1, k1, m = a.shape
+
+    if bT:
+        batch2, k2, n = b.shape
+    else:
+        batch2, n, k2 = b.shape
+    
+    assert k1 == k2
+
+    if batch1 == 1:
+        batch = batch2
+    elif batch2 == 1:
+        batch = batch1
+    elif batch1 == batch2:
+        batch = batch1
+    else:
+        raise ValueError("batch A(%d) != batch B(%d)" % (batch1, batch2))
+
+    assert c.shape == (batch,n, m)
+
+    if dtype == cupy.float16:
+        rt_type = cublasLt.CUDA_R_16F
+        ct_type = cublasLt.CUBLAS_COMPUTE_16F
+    elif dtype == cupy.float32:
+        rt_type = cublasLt.CUDA_R_32F
+        ct_type = cublasLt.CUBLAS_COMPUTE_32F
+    else:
+        raise TypeError("Unsupported type %s" % dtype)
+
+    ltHandle = get_handle(device)
+    layout_A, layout_B, layout_C = cublasLt.cublasLtMatrixLayout_t(), cublasLt.cublasLtMatrixLayout_t(), cublasLt.cublasLtMatrixLayout_t()
+    cublasLt.checkCublasStatus( cublasLt.cublasLtMatrixLayoutCreate(layout_A, rt_type, a.shape[2], a.shape[1], a.shape[2]) )
+    cublasLt.checkCublasStatus( cublasLt.cublasLtMatrixLayoutCreate(layout_B, rt_type, b.shape[2], b.shape[1], b.shape[2]) )
+    cublasLt.checkCublasStatus( cublasLt.cublasLtMatrixLayoutCreate(layout_C, rt_type, c.shape[2], c.shape[1], c.shape[2]) )
+
+    if batch1 == 1:
+        stride_a = 0
+    else:
+        stride_a = a.shape[1] * a.shape[2]
+    if batch2 == 1:
+        stride_b = 0
+    else:
+        stride_b = b.shape[1] * b.shape[2]
+    stride_c = c.shape[1] * c.shape[2]
+
+    cublasLt.checkCublasStatus(cublasLt.cublasLtMatrixLayoutSetAttribute(layout_A, cublasLt.CUBLASLT_MATRIX_LAYOUT_BATCH_COUNT, ctypes.byref(ctypes.c_int32(batch)), ctypes.sizeof(ctypes.c_int32)))
+    cublasLt.checkCublasStatus(cublasLt.cublasLtMatrixLayoutSetAttribute(layout_A, cublasLt.CUBLASLT_MATRIX_LAYOUT_STRIDED_BATCH_OFFSET, ctypes.byref(ctypes.c_int64(stride_a)), ctypes.sizeof(ctypes.c_int64)))
+    cublasLt.checkCublasStatus(cublasLt.cublasLtMatrixLayoutSetAttribute(layout_B, cublasLt.CUBLASLT_MATRIX_LAYOUT_BATCH_COUNT, ctypes.byref(ctypes.c_int32(batch)), ctypes.sizeof(ctypes.c_int32)))
+    cublasLt.checkCublasStatus(cublasLt.cublasLtMatrixLayoutSetAttribute(layout_B, cublasLt.CUBLASLT_MATRIX_LAYOUT_STRIDED_BATCH_OFFSET, ctypes.byref(ctypes.c_int64(stride_b)), ctypes.sizeof(ctypes.c_int64)))
+    cublasLt.checkCublasStatus(cublasLt.cublasLtMatrixLayoutSetAttribute(layout_C, cublasLt.CUBLASLT_MATRIX_LAYOUT_BATCH_COUNT, ctypes.byref(ctypes.c_int32(batch)), ctypes.sizeof(ctypes.c_int32)))
+    cublasLt.checkCublasStatus(cublasLt.cublasLtMatrixLayoutSetAttribute(layout_C, cublasLt.CUBLASLT_MATRIX_LAYOUT_STRIDED_BATCH_OFFSET, ctypes.byref(ctypes.c_int64(stride_c)), ctypes.sizeof(ctypes.c_int64)))
+    
+    matmul_desc = cublasLt.cublasLtMatmulDesc_t()
+    if cublasLt.VERSION == 10:
+        cublasLt.checkCublasStatus( cublasLt.cublasLtMatmulDescCreate(matmul_desc, rt_type) )
+    else:
+        cublasLt.checkCublasStatus( cublasLt.cublasLtMatmulDescCreate(matmul_desc, ct_type, rt_type) )
+    if aT:
+        cublasLt.checkCublasStatus( cublasLt.cublasLtMatmulDescSetAttribute(matmul_desc, cublasLt.CUBLASLT_MATMUL_DESC_TRANSA, ctypes.byref( ctypes.c_int32(cublasLt.CUBLAS_OP_T)), ctypes.sizeof(ctypes.c_int32)) )
+    if bT:
+        cublasLt.checkCublasStatus( cublasLt.cublasLtMatmulDescSetAttribute(matmul_desc, cublasLt.CUBLASLT_MATMUL_DESC_TRANSB, ctypes.byref( ctypes.c_int32(cublasLt.CUBLAS_OP_T)), ctypes.sizeof(ctypes.c_int32)) )
+    
+    if dtype == cupy.float32:
+        alpha = ctypes.byref(ctypes.c_float(1))
+        beta = ctypes.byref(ctypes.c_float(0))
+    elif dtype == cupy.float16:
+        tmp = np.array([1, 0], dtype=np.float16)
+        alpha = tmp[0:].ctypes.data
+        beta = tmp[1:].ctypes.data
+    else:
+        raise NotImplementedError()
+
+    cublasLt.checkCublasStatus( cublasLt.cublasLtMatmul(
+        ltHandle, 
+        matmul_desc, 
+        alpha, 
+        a.data.ptr, 
+        layout_A, 
+        b.data.ptr, 
+        layout_B, 
+        beta, 
+        c.data.ptr,
+        layout_C,
+        c.data.ptr,
+        layout_C,
+        0,
+        0,
+        0,
+        stream.ptr
+    ))
+    cublasLt.checkCublasStatus(cublasLt.cublasLtMatmulDescDestroy(matmul_desc))
+    cublasLt.checkCublasStatus(cublasLt.cublasLtMatrixLayoutDestroy(layout_A))
+    cublasLt.checkCublasStatus(cublasLt.cublasLtMatrixLayoutDestroy(layout_B))
+    cublasLt.checkCublasStatus(cublasLt.cublasLtMatrixLayoutDestroy(layout_C))
+
 
 def sgemmBatched(a, aT, b, bT, out):
     assert isinstance(a, cupy.ndarray)
@@ -275,11 +395,10 @@ def sgemmBatched(a, aT, b, bT, out):
     assert out._c_contiguous
     assert a.device == b.device
     assert b.device == out.device
-    assert a.dtype == b.dtype
-    assert out.dtype == b.dtype
-    assert a.dtype == cupy.float32
-    assert b.dtype == cupy.float32
-    assert out.dtype == cupy.float32
+    dtype = a.dtype 
+    assert a.dtype == dtype
+    assert b.dtype == dtype
+    assert out.dtype == dtype
     
     if aT:
         batch1, k1, m = a.shape
