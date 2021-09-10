@@ -13,8 +13,8 @@ class EncoderKeyValueProjection(Layer):
         self.dim_in = dim_in
         self.num_heads = num_heads
 
-        self.w_project_kv = Parameter((num_decoder, dim_kv * num_heads * 2, dim_in), cupy.int8)
-        self.w_project_kv_scale = Parameter((num_decoder, dim_kv * num_heads * 2, 1), cupy.float16)
+        self.w_project_kv = Parameter((num_decoder * dim_kv * num_heads * 2, dim_in), cupy.int8)
+        self.w_project_kv_scale = Parameter((num_decoder * dim_kv * num_heads * 2, 1), cupy.float16)
     
     def forward(self, allocator : Allocator, x):
         assert x.dtype == cupy.float16
@@ -30,13 +30,13 @@ class EncoderKeyValueProjection(Layer):
         # (batch_size, dim_model, seq_len), (batch_size, 1, seq_len)
         quantize(value, value_i8, scale, axis=1)
 
+        out_i32 = allocator.alloc_array((batch_size, self.num_decoder * self.dim_kv * self.num_heads * 2, seq_len), cupy.int32)
         
-        out_f16 = allocator.alloc_array((batch_size, self.num_decoder, self.dim_kv * self.num_heads * 2, seq_len), cupy.float16)
-        tmp_i32 = allocator.alloc_array((self.num_decoder, self.dim_kv * self.num_heads * 2, seq_len), cupy.int32)
-        for i in range(batch_size):
-            igemm(allocator, value_i8[i][cupy.newaxis], False, self.w_project_kv.value, False, tmp_i32)
-            elementwise_copy_scale(tmp_i32, scale[i][cupy.newaxis], self.w_project_kv_scale.value, out_f16[i])
-        del tmp_i32
+        igemm(allocator, value_i8, False, self.w_project_kv.value[cupy.newaxis], False, out_i32)
+        
+        out_f16 = allocator.alloc_array(out_i32.shape, cupy.float16)
+        elementwise_copy_scale(out_i32, scale, self.w_project_kv_scale.value, out_f16)
+        
         assert out_f16._c_contiguous
 
         reshaped_out_f16 = cupy.ndarray(
