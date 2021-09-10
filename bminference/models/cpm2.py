@@ -21,7 +21,6 @@ class CPM2(T5):
             config.DEVICE = device
         
         # generate cublas handler
-        config.DEVICE.cublas_handle
 
         if config.MEMORY_LIMIT is None:
             if memory_limit is None:
