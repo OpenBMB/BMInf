@@ -1,3 +1,4 @@
+from tqdm import tqdm
 from bminference.allocator import SizeLimitedAllocator
 from bminference.functions.gemm import fgemm
 import cupy
@@ -56,7 +57,6 @@ def test(a, b, m, k, n):
     diff = cupy.abs(ac - mc)
     amx = diff.argmax()
     mx = diff.max()
-    print(mx)
     if mx > 5e-3:
         print("Test (%d, %d, %d, %d)" % (b, m, k, n))
         print("aT: %s, bT: %s, batch_a: %d, batch_b: %d" % (aT, bT, ba, bb))
@@ -68,7 +68,7 @@ def test(a, b, m, k, n):
     
 def main():
     allocator = SizeLimitedAllocator(1024 * 1024 * 1024 * 4)
-    for i in range(3200):
+    for i in tqdm(range(3200)):
         b = random.randint(1, 128)
         m = random.randint(1, 1024)
         k = random.randint(1, 1024)
