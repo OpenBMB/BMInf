@@ -20,5 +20,5 @@ class T5Configuration(Configuration):
     DEVICE = None
     MEMORY_LIMIT = None
     OVERLAP_LAYERS = None
-    DYNAMIC_MEMORY = 1024 * 1024 * 900
+    DYNAMIC_MEMORY = 1024 * 1024 * 512
     MODEL_NAME = None

@@ -70,7 +70,7 @@ def main():
     model = torch.load("merge.pt")
     config = CPM2Configuration()
     config.MODEL_PATH = None
-    cpm2 = CPM2(config=config)
+    cpm2 = CPM2(config)
     build_model(model, cpm2)
     cpm2.dump(open("checkpoint.pt", "wb"))
 
