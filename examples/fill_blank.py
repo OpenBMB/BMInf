@@ -7,7 +7,7 @@ def fill_blank(cpm2 : bminference.models.CPM2, text : str):
     for result in cpm2.generate(input_text, 
             top_p=1.0,
             top_n=10, 
-            temperature=0.9,
+            temperature=0.7,
             frequency_penalty=0,
             presence_penalty=0
         ):
