@@ -38,8 +38,8 @@ class EncoderKeyValueProjection(Layer):
         shpaed_project_scale = self.w_project_kv_scale.value.reshape(self.num_decoder, self.dim_kv * self.num_heads * 2, 1)
 
         for i in range(batch_size):
-            igemm(allocator, value_i8[i][cupy.newaxis], False, shaped_project_kv, False, tmp_i32)
-            elementwise_copy_scale(tmp_i32, scale[i][cupy.newaxis], shpaed_project_scale, out_f16[i])
+            igemm(allocator, value_i8[i][cupy.newaxis], False, self.w_project_kv.value, False, tmp_i32)
+            elementwise_copy_scale(tmp_i32, scale[i][cupy.newaxis], self.w_project_kv_scale.value, out_f16[i])
         del tmp_i32
         assert out_f16._c_contiguous
 
