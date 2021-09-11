@@ -72,7 +72,7 @@ Here we report the speeds of CPM2 encoder and decoder we have tested on differen
 | NVIDIA GeForce GTX 2080Ti | 2275 | 19
 
 ## Contributing
-Links to the user community and contributing guidelines.
+Links to the user community and [contributing guidelines](./CONTRIBUTING.md).
 
 ## License
 

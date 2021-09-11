@@ -70,7 +70,7 @@ print(text)
 | NVIDIA GeForce GTX 2080Ti | 2275 | 19
 
 ## 参与贡献
-Todo：开源社区链接和贡献指南
+请参考开源社区链接和[贡献指南](./CONTRIBUTING.md)。
 
 ## 开源许可
 
