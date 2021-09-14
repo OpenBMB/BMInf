@@ -1,21 +1,30 @@
 from typing import Optional, Union, List
+import numpy as np
 from ..arch.t5 import T5Configuration, T5
 import cupy
-import numpy as np
 from ..utils.sampler import GenerateSampler
 
 import logging
 logger = logging.getLogger(__name__)
 
-SPAN_TOKEN = "<span>"
 
-class CPM2Configuration(T5Configuration):
-    MODEL_NAME = "cpm2"
+class EVA2Configuration(T5Configuration):
+    MODEL_NAME = "eva2"
+    DIM_MODEL = 2048
+    DIM_FF = 5120
+    DIM_KV = 64
 
-class CPM2(T5):
-    def __init__(self, device : Union[None, int, cupy.cuda.Device] = None, memory_limit : Optional[int] = None, config : Optional[CPM2Configuration] = None):
+    NUM_HEADS = 32
+    NUM_ENCODER_LAYERS = 24
+    NUM_DECODER_LAYERS = 24
+    NUM_POSITION_BUCKETS = 32
+    VOCAB_SIZE = 30000
+    MAX_DECODER_LENGTH = 256
+
+class EVA2(T5):
+    def __init__(self, device : Union[None, int, cupy.cuda.Device] = None, memory_limit : Optional[int] = None, config : Optional[EVA2Configuration] = None):
         if config is None:
-            config = CPM2Configuration()
+            config = EVA2Configuration()
 
         if config.DEVICE is None:
             if device is None:
@@ -48,49 +57,28 @@ class CPM2(T5):
 
         super().__init__(config)
 
-    def generate(self, 
-            input_sentence : str,
-            spans_position : Optional[List[int]] = None,
+    def dialogue(self, 
+            context : List[str],
             max_tokens : int = 128,
             top_n : Optional[int] = None,
             top_p : Optional[float] = None,
             temperature : float = 0.9,
             frequency_penalty : float = 0,
             presence_penalty : float = 0,
+            truncation_length : Optional[int] = 256
         ):
-        if spans_position is None:
-            spans_position = []
-            st = 0
-            while True:
-                nw_pos = input_sentence.find(SPAN_TOKEN, st)
-                if nw_pos == -1:
-                    break
-                spans_position.append(nw_pos)
-                st = nw_pos + len(SPAN_TOKEN)
-        if len(spans_position) == 0:
-            raise ValueError("No spans")
-        if len(spans_position) > 16:
-            raise ValueError("Too many spans")
-        for pos in spans_position:
-            if not input_sentence[pos:].startswith(SPAN_TOKEN):
-                raise ValueError("Wrong span token at position %d" % pos)
         
         idx = []
-        span_idx = 0
-        last_pos = 0
-        for pos in spans_position:
-            idx += self.text_to_id(input_sentence[last_pos: pos])
-            idx += [ self.tokenizer.get_span(span_idx) ]
-            span_idx += 1
-            last_pos = pos + len(SPAN_TOKEN)
-
-        idx += self.text_to_id(input_sentence[last_pos:])
+        for sentence in context:
+            idx.extend( self.text_to_id(sentence) + [self.get_token_id("<sep>")] )
+        idx += [ self.get_token_id("<s_0>") ]
+        if truncation_length is not None and len(idx) > truncation_length:
+            idx = idx[-truncation_length:]
         input_length = len(idx)
-
         ctx = self.encode(np.array([idx], dtype=np.int64), [input_length])
         self.init_decoder_context(ctx)
-        
-        decoder_ipts = self.tokenizer.sod_id
+
+        decoder_ipts = self.get_token_id("<s_0>")
         sampler = GenerateSampler(
             idx, 
             self.tokenizer.vocab_size,
@@ -103,24 +91,13 @@ class CPM2(T5):
             presence_penalty
         )
 
-        blanks = []
-        next_span = 0
-
+        ret = []
+        sep_id = self.get_token_id("<sep>")
         for _ in range(max_tokens):
             logits = self.decode_step(ctx, [decoder_ipts])[0]
             decoder_ipts = sampler.sample(logits)
-            if decoder_ipts == self.tokenizer.get_span(next_span):
-                next_span += 1
-                if next_span > len(spans_position):
-                    break
-                blanks.append([])
-            else:
-                blanks[-1].append(decoder_ipts)
-        
-        return [
-            {
-                "position": blank_pos,
-                "text": self.id_to_text(blank_tokens)
-            } 
-            for blank_pos, blank_tokens in zip( spans_position, blanks )
-        ]
+            if decoder_ipts == sep_id:
+                break
+            ret.append(decoder_ipts)
+            
+        return self.id_to_text(ret)

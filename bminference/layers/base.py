@@ -18,7 +18,8 @@ def load_dtype(fp):
 
 def load_string(fp):
     size = struct.unpack("I", fp.read(4))[0]
-    return fp.read(size).decode("utf-8")
+    v = fp.read(size)
+    return v.decode("utf-8")
 
 def load_tuple(fp):
     dim_tuple = struct.unpack("B", fp.read(1))[0]
@@ -88,7 +89,7 @@ class Layer:
         for kw, val in self._parameters.items():
             dump_string(kw, fp)
             if val.data is not None:
-                dump_parameter(val.shape, val.data, val.dtype, fp)
+                dump_parameter(val.shape, val.data.tobytes(), val.dtype, fp)
             else:
                 raise RuntimeError("Paraemter %s has no data" % kw)
         for kw, val in self._sub_layers.items():

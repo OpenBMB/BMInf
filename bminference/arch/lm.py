@@ -4,13 +4,13 @@ import numpy as np
 import cupy
 
 
-class Seq2SeqTokenizer(Tokenizer):
+class LMModelTokenizer(Tokenizer):
     def get_span(self, span_id) -> int:
         raise NotImplementedError()
 
-class Seq2SeqModel(Model):
+class LMModel(Model):
     
-    tokenizer : Seq2SeqTokenizer
+    tokenizer : LMModelTokenizer
 
     def encode(self, input_idx : np.ndarray, input_length : List[int]) -> InferenceContext:
         raise NotImplementedError()

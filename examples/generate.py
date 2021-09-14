@@ -1,4 +1,3 @@
-import numpy as np
 import bminference
 from tqdm import tqdm
 
@@ -24,7 +23,9 @@ input_text = """天空是蔚蓝色，窗外有"""
 
 def main():
     print("Loading model")
-    cpm2 = bminference.models.CPM2()
+    config = bminference.models.CPM2Configuration()
+    config.MODEL_NAME = "file:///root/.cache/bigmodels/cpm2/"
+    cpm2 = bminference.models.CPM2(config=config)
     print("Start")
     generate(cpm2, input_text)
 

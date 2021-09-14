@@ -1,17 +1,14 @@
 import threading
-from typing import List, Union, Optional
+from typing import List, Union
 import cupy
-from ..seq2seq import Seq2SeqModel
-from ...layers.transformer_block import TransformerBlockDecoder, TransformerBlockEncoder
-from ...layers.encoder_kv import EncoderKeyValueProjection
-from ...layers.position_bias import PositionBias
+from ..lm import LMModel
+from ...layers.transformer_block import TransformerBlockEncoder
 from ...layers.embedding import Embedding
 from ...layers.layer_norm import LayerNorm
 from ...layers.mask import InputMask
-from ...layers.lm_head import LMHead
 from ...layers.layer_list import LayerList
-from .config import T5Configuration
-from .tokenizer import T5Tokenizer
+from .config import GPTConfiguration
+from .tokenizer import GPT2Tokenizer
 from .context import T5InferenceContext
 from ...allocator import ReusedAllocator, SizeLimitedAllocator
 import numpy as np
@@ -20,51 +17,38 @@ from ... import data
 
 logger = logging.getLogger(__name__)
 
-class T5(Seq2SeqModel):
-    def __init__(self, config : T5Configuration):
+class GPT(LMModel):
+    def __init__(self, config : GPTConfiguration):
         # Build Model
         logger.info("Building model")
         
         self.memory_overlap = config.MEMORY_OVERLAP
-        self.max_overlap_layers = max(config.NUM_ENCODER_LAYERS, config.NUM_DECODER_LAYERS)
+        self.max_overlap_layers = config.NUM_LAYERS
         if self.memory_overlap:
             self.overlap_layers = min(config.OVERLAP_LAYERS, self.max_overlap_layers)
         else:
             self.overlap_layers = self.max_overlap_layers
 
-        self.encoder_only = config.ENCODER_ONLY
-        self.max_decoder_length = config.MAX_DECODER_LENGTH
+        self.max_length = config.MAX_LENGTH
         self.dim_model = config.DIM_MODEL
 
-        logger.info("============ T5 ==============")
+        logger.info("============ GPT ==============")
         logger.info("MEM_OVERLAP: %s", self.memory_overlap)
         logger.info("OVERLAP_LAYERS: %s", self.overlap_layers)
-        logger.info("ENCODER_ONLY: %s", self.encoder_only)
-        logger.info("MAX_DECODER_LENGTH: %s", self.max_decoder_length)
+        logger.info("MAX_LENGTH: %s", self.max_length)
 
         self.input_embedding = Embedding(config.VOCAB_SIZE, config.DIM_MODEL)
-        self.input_mask = InputMask(is_decoder=False)
+        self.position_embedding = Embedding(config.MAX_LENGTH, config.DIM_MODEL)
+        self.input_mask = InputMask(is_decoder=True)
 
-        self.encoder_position_bias = PositionBias(config.NUM_POSITION_BUCKETS, config.NUM_HEADS, is_decoder=False)
-        self.num_encoder = config.NUM_ENCODER_LAYERS
-        self.encoder = LayerList([
+        self.num_layers = config.NUM_LAYERS
+        self.layers = LayerList([
             TransformerBlockEncoder(config.DIM_MODEL, config.DIM_FF, config.DIM_KV, config.NUM_HEADS)
-                for _ in range(config.NUM_ENCODER_LAYERS)
         ])
+        
         self.encoder_final_layer_nrom = LayerNorm(config.DIM_MODEL)
         self.num_heads = config.NUM_HEADS
         self.dim_qkv = config.DIM_KV
-
-        if not self.encoder_only:
-            self.decoder_position_bias = PositionBias(config.NUM_POSITION_BUCKETS, config.NUM_HEADS, is_decoder=True)
-            self.encoder_kv = EncoderKeyValueProjection(config.NUM_DECODER_LAYERS, config.DIM_MODEL, config.DIM_KV, config.NUM_HEADS)
-            self.lm_head = LMHead(config.VOCAB_SIZE, config.DIM_MODEL)
-            self.num_decoder = config.NUM_DECODER_LAYERS
-            self.decoder = LayerList([
-                TransformerBlockDecoder(config.DIM_MODEL, config.DIM_FF, config.DIM_KV, config.NUM_HEADS)
-                    for _ in range(config.NUM_DECODER_LAYERS)
-            ])
-            self.decoder_final_layer_nrom = LayerNorm(config.DIM_MODEL)
 
         if config.MODEL_NAME is not None:
             # init parameter
@@ -72,7 +56,7 @@ class T5(Seq2SeqModel):
             model_path = data.ensure_file(config.MODEL_NAME, "checkpoint.pt")
             vocab_path = data.ensure_file(config.MODEL_NAME, "vocab.txt")
 
-            self.tokenizer = T5Tokenizer(vocab_path)
+            self.tokenizer = GPT2Tokenizer(vocab_path)
 
             self.device = config.DEVICE
             with self.device:

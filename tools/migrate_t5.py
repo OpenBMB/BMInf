@@ -1,25 +1,31 @@
+from bminference.models.eva2 import EVA2Configuration
 import torch
 import numpy as np
 from bminference.models.cpm2 import CPM2, CPM2Configuration
 from bminference.parameter import Parameter
 from bminference.layers.transformer_block import TransformerBlockDecoder
 
+device = torch.device("cuda:0")
+
 def build_parameter(name, parameter : Parameter, ckpt):
     tensor = ckpt[name]
     tp = parameter.dtype
-    v = tensor.numpy().astype(tp)
+    v = tensor.cpu().numpy().astype(tp)
     shape = v.shape
     if np.issubdtype(parameter.dtype, np.integer):
         raise TypeError("%s has low precision" % name)
     parameter.put_data(shape, v.tobytes(), tp)
 
 def scale_build_parameter(name, value : Parameter, scale : Parameter, axis, ckpt):
-    tensor = ckpt[name]
-    v = tensor.numpy().astype(np.float16)
-    scale_v = np.max(np.abs(v), axis=axis, keepdims=True) / 127
+    tensor = ckpt[name].to(device)
+    # v = tensor.numpy().astype(np.float16)
+    scale_v = torch.max(tensor.abs(), dim=axis, keepdim=True)[0] / 127
 
-    qv = np.round(v / scale_v).astype(np.int8)
-    scale_v = scale_v.astype(np.float16)
+    qv = torch.round(tensor / scale_v).type(torch.int8)
+    scale_v = scale_v.type(torch.float16)
+
+    qv = qv.cpu().numpy().astype(np.int8)
+    scale_v = scale_v.cpu().numpy().astype(np.float16)
 
     value.put_data(qv.shape, qv.tobytes(), qv.dtype)
     scale.put_data(scale_v.shape, scale_v.tobytes(), scale_v.dtype)
@@ -59,18 +65,18 @@ def build_model(ckpt, model : CPM2):
     
     ret = []
     for i in range(24):
-        ret.append(ckpt[f"decoder.blocks.{i}.cross_attn.cross_attn.project_kv.weight"].numpy())
-    v = np.concatenate(ret, axis=0)
+        ret.append(ckpt[f"decoder.blocks.{i}.cross_attn.cross_attn.project_kv.weight"].cpu().numpy())
+    v = np.stack(ret)
     ckpt["encoder_kv.weight"] = torch.from_numpy(v)
-    scale_build_parameter("encoder_kv.weight", model.encoder_kv.w_project_kv, model.encoder_kv.w_project_kv_scale, 1, ckpt)
+    scale_build_parameter("encoder_kv.weight", model.encoder_kv.w_project_kv, model.encoder_kv.w_project_kv_scale, -1, ckpt)
     build_encoder(ckpt, model)
     build_decoder(ckpt, model)
     
 def main():
     model = torch.load("merge.pt")
     config = CPM2Configuration()
-    config.MODEL_PATH = None
-    cpm2 = CPM2(config)
+    config.MODEL_NAME = None
+    cpm2 = CPM2(config=config)
     build_model(model, cpm2)
     cpm2.dump(open("checkpoint.pt", "wb"))
 

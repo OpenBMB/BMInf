@@ -17,7 +17,9 @@ def fill_blank(cpm2 : bminference.models.CPM2, text : str):
 
 def main():
     print("Loading model")
-    cpm2 = bminference.models.CPM2()
+    config = bminference.models.CPM2Configuration()
+    config.MODEL_NAME = "file:///root/.cache/bigmodels/cpm2/"
+    cpm2 = bminference.models.CPM2(config=config)
     print("Start")
     fill_blank(cpm2, input_text)
 

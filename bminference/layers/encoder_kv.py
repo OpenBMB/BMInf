@@ -13,8 +13,8 @@ class EncoderKeyValueProjection(Layer):
         self.dim_in = dim_in
         self.num_heads = num_heads
 
-        self.w_project_kv = Parameter((num_decoder * dim_kv * num_heads * 2, dim_in), cupy.int8)
-        self.w_project_kv_scale = Parameter((num_decoder * dim_kv * num_heads * 2, 1), cupy.float16)
+        self.w_project_kv = Parameter((num_decoder, dim_kv * num_heads * 2, dim_in), cupy.int8)
+        self.w_project_kv_scale = Parameter((num_decoder, dim_kv * num_heads * 2, 1), cupy.float16)
     
     def forward(self, allocator : Allocator, x):
         assert x.dtype == cupy.float16
@@ -29,18 +29,19 @@ class EncoderKeyValueProjection(Layer):
         
         # (batch_size, dim_model, seq_len), (batch_size, 1, seq_len)
         quantize(value, value_i8, scale, axis=1)
+        out_f16 = allocator.alloc_array((self.num_decoder, batch_size, self.dim_kv * self.num_heads * 2, seq_len), cupy.float16)
+        out_i32 = allocator.alloc_array((batch_size, self.dim_kv * self.num_heads * 2, seq_len), cupy.int32)
 
-        out_i32 = allocator.alloc_array((batch_size, self.num_decoder * self.dim_kv * self.num_heads * 2, seq_len), cupy.int32)
+        for i in range(self.num_decoder):    
+            # (batch_size, dim_model, seq_len) @ (1, dim_kv * num_heads * 2, dim_model)
+            igemm(allocator, value_i8, False, self.w_project_kv.value[i:i+1], False, out_i32)
         
-        igemm(allocator, value_i8, False, self.w_project_kv.value[cupy.newaxis], False, out_i32)
-        
-        out_f16 = allocator.alloc_array(out_i32.shape, cupy.float16)
-        elementwise_copy_scale(out_i32, scale, self.w_project_kv_scale.value, out_f16)
-        
+            elementwise_copy_scale(out_i32, scale, self.w_project_kv_scale.value[i], out_f16[i])
+        del out_i32
         assert out_f16._c_contiguous
 
         reshaped_out_f16 = cupy.ndarray(
-            (batch_size, self.num_decoder, 2, self.num_heads, self.dim_kv, seq_len),
+            (self.num_decoder, batch_size, 2, self.num_heads, self.dim_kv, seq_len),
             dtype=out_f16.dtype,
             memptr=out_f16.data
         )

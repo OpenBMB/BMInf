@@ -26,7 +26,9 @@ def get_cache_path() -> str:
     global _CACHE_PATH
     return _CACHE_PATH
 
-def ensure_file(model_name, filename):
+def ensure_file(model_name : str, filename : str):
+    if model_name.startswith("file://"):
+        return os.path.join(model_name[ len("file://"): ], filename)
     url = _SOURCE_URL_PREFIX + model_name + "/" + filename
     response = requests.get(url, stream=True)
     total_size_in_bytes= int(response.headers.get('Content-Length', 0))
