@@ -16,8 +16,8 @@ class SelfAttention(Layer):
         self.num_heads = num_heads
         self.dim_in = dim_in
 
-        self.w_project_qkv = Parameter((dim_qkv * num_heads * 3, dim_in), cupy.int8)
-        self.w_project_qkv_scale = Parameter((dim_qkv * num_heads * 3, 1), cupy.float16)
+        self.w_project_qkv = Parameter((3, dim_qkv * num_heads, dim_in), cupy.int8)
+        self.w_project_qkv_scale = Parameter((3, dim_qkv * num_heads, 1), cupy.float16)
         self.w_out = Parameter((dim_in, dim_qkv * num_heads), cupy.int8)
         self.w_out_scale = Parameter((dim_in, 1), cupy.float16)
     
@@ -52,22 +52,19 @@ class SelfAttention(Layer):
         # FIXME: cupy cublasGemmStridedBatchedEx
         qkv_i32 = allocator.alloc_array((3, batch_size, self.num_heads * self.dim_qkv, seq_len), dtype=cupy.int32)
         qkv_f16 = allocator.alloc_array( qkv_i32.shape, dtype=cupy.float16 )
-
-        shaped_project_qkv = self.w_project_qkv.value.reshape(3, self.dim_qkv * self.num_heads, self.dim_in)
-        shpaed_project_qkv_scale = self.w_project_qkv_scale.value.reshape(3, self.dim_qkv * self.num_heads, 1)
         
         for i in range(3):
             igemm(
                 allocator,
                 value,
                 False,
-                shaped_project_qkv[i:i+1],
+                self.w_project_qkv.value[i:i+1],
                 False,
                 qkv_i32[i]
             )
             elementwise_copy_scale(
                 qkv_i32[i], 
-                shpaed_project_qkv_scale[i:i+1],   # (1, dim_qkv * num_heads, 1)
+                self.w_project_qkv_scale.value[i:i+1],   # (1, dim_qkv * num_heads, 1)
                 scale,     # (batch_size, 1, seq_len)
                 out=qkv_f16[i]
             )
@@ -163,8 +160,8 @@ class PartialAttention(Layer):
         self.dim_qkv = dim_qkv
 
         if self.is_self_attn:
-            self.w_project_qkv = Parameter((dim_qkv * num_heads * 3, dim_in), cupy.int8)
-            self.w_project_qkv_scale = Parameter((dim_qkv * num_heads * 3, 1), cupy.float16)
+            self.w_project_qkv = Parameter((3, dim_qkv * num_heads, dim_in), cupy.int8)
+            self.w_project_qkv_scale = Parameter((3, dim_qkv * num_heads, 1), cupy.float16)
         else:
             self.w_project_q = Parameter((dim_qkv * num_heads, dim_in), cupy.int8)
             self.w_project_q_scale = Parameter((dim_qkv * num_heads, 1), cupy.float16)
@@ -191,7 +188,7 @@ class PartialAttention(Layer):
         ):
         batch_size, dim_model = curr_hidden_state.shape
         num_heads, dim_qkv, past_kv_len = past_kv.shape[2:]
-        assert past_kv.shape == (batch_size, 2, num_heads, dim_qkv, past_kv_len)
+        assert past_kv.shape == (2, batch_size, num_heads, dim_qkv, past_kv_len)
         assert past_kv.dtype == cupy.float16
         assert num_heads == self.num_heads
         assert dim_qkv == self.dim_qkv
@@ -211,18 +208,18 @@ class PartialAttention(Layer):
         
         # FIXME: cupy cublasGemmStridedBatchedEx
         if self.is_self_attn:
-            qkv_i32 = allocator.alloc_array((batch_size, 3 * self.num_heads * self.dim_qkv, 1), dtype=cupy.int32)
+            qkv_i32 = allocator.alloc_array((3, batch_size, self.num_heads * self.dim_qkv, 1), dtype=cupy.int32)
         else:
             qkv_i32 = allocator.alloc_array((batch_size, self.num_heads * self.dim_qkv, 1), dtype=cupy.int32)
         
         if self.is_self_attn:
             igemm(
                 allocator,
-                self.w_project_qkv.value[cupy.newaxis],
+                self.w_project_qkv.value,   # (3, num_head * dim_qkv, dim_model)
                 True,
-                value[cupy.newaxis],
+                value[cupy.newaxis],        # (1, batch_size, dim_model)
                 False,
-                qkv_i32[cupy.newaxis, :, :, 0]
+                qkv_i32[:, :, :, 0]         # (3, batch_size, num_head * dim_qkv)
             )
         else:
             igemm(
@@ -242,9 +239,9 @@ class PartialAttention(Layer):
 
         if self.is_self_attn:
             elementwise_copy_scale(
-                qkv_i32, 
-                self.w_project_qkv_scale.value,   # (1#batch_size, dim_qkv * num_heads * 3, 1)
-                scale[:, :, cupy.newaxis],     # (batch_size, 1, 1)
+                qkv_i32,                        # (3, batch_size, num_head * dim_qkv, 1)
+                self.w_project_qkv_scale.value[:, cupy.newaxis, :, :],   # (3, 1#batch_size, dim_qkv * num_heads, 1)
+                scale[cupy.newaxis, :, :, cupy.newaxis],     # (1#3, batch_size, 1, 1)
                 out=qkv_f16
             )
         else:
@@ -258,10 +255,10 @@ class PartialAttention(Layer):
         # reshape
         assert qkv_f16._c_contiguous
         if self.is_self_attn:
-            qkv = cupy.ndarray( (batch_size, 3, self.num_heads, self.dim_qkv), dtype=cupy.float16, memptr=qkv_f16.data )
-            query = qkv[:, 0, :, :] # (batch, num_heads, dim_qkv)
-            past_kv[:, 0, :, :, decoder_length] = qkv[:, 1, :, :]
-            past_kv[:, 1, :, :, decoder_length] = qkv[:, 2, :, :]
+            qkv = cupy.ndarray( (3, batch_size, self.num_heads, self.dim_qkv), dtype=cupy.float16, memptr=qkv_f16.data )
+            query = qkv[0] # (batch, num_heads, dim_qkv)
+            past_kv[0, :, :, :, decoder_length] = qkv[1]
+            past_kv[1, :, :, :, decoder_length] = qkv[2]
             del qkv
         else:
             query = cupy.ndarray( (batch_size, self.num_heads, self.dim_qkv), dtype=cupy.float16, memptr=qkv_f16.data )
@@ -269,15 +266,14 @@ class PartialAttention(Layer):
 
         # calc attention score
         attention_score = allocator.alloc_array((batch_size, self.num_heads, past_kv_len, 1), dtype=cupy.float16)
-        for i in range(batch_size):
-            fgemm(
-                allocator,
-                query[i, :, :, cupy.newaxis],  # (num_heads, dim_qkv, 1)
-                False,
-                past_kv[i, 0], #(num_heads, dim_qkv, past_kv_len)
-                True,
-                attention_score[i]  # (num_heads, past_kv_len, 1)
-            )
+        fgemm(
+            allocator,
+            query.reshape( batch_size * self.num_heads, self.dim_qkv, 1 ),  # (batch_size * num_heads, dim_qkv, 1)
+            False,
+            past_kv[0].reshape(batch_size * self.num_heads, self.dim_qkv, past_kv_len), #( batch_size * num_heads, dim_qkv, past_kv_len)
+            True,
+            attention_score.reshape(batch_size * self.num_heads, past_kv_len, 1)  # (batch_size * num_heads, past_kv_len, 1)
+        )
         # mask
         mask_attention_kernel(
             past_kv_mask[:, cupy.newaxis, :, cupy.newaxis], # (batch, 1#num_heads, past_kv_len, 1)
@@ -300,11 +296,14 @@ class PartialAttention(Layer):
         del temp_attn_mx
 
         out_raw = allocator.alloc_array((batch_size, self.num_heads, self.dim_qkv, 1), dtype=cupy.float16)
-        for i in range(batch_size):
-            attn = attention_score[i]   # (num_heads, past_kv_len, 1）
-            val = past_kv[i, 1]         # (num_heads, dim_qkv, past_kv_len)
-
-            fgemm(allocator, attn, False, val, False, out_raw[i])
+        fgemm(
+            allocator, 
+            attention_score.reshape(batch_size * self.num_heads, past_kv_len, 1),
+            False, 
+            past_kv[1].reshape(batch_size * self.num_heads, self.dim_qkv, past_kv_len), 
+            False, 
+            out_raw.reshape(batch_size * self.num_heads, self.dim_qkv, 1)
+        )
         assert out_raw._c_contiguous
 
         out = cupy.ndarray((batch_size, self.num_heads * self.dim_qkv), dtype=cupy.float16, memptr=out_raw.data)

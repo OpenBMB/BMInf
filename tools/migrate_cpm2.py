@@ -30,10 +30,19 @@ def scale_build_parameter(name, value : Parameter, scale : Parameter, axis, ckpt
     value.put_data(qv.shape, qv.tobytes(), qv.dtype)
     scale.put_data(scale_v.shape, scale_v.tobytes(), scale_v.dtype)
 
+def split(x, s):
+    sizes = []
+    for it in x.size():
+        sizes.append(it)
+    assert sizes[0] % s == 0
+    sizes = [s, sizes[0] // s ] + sizes[1:]
+    return x.reshape(*sizes)
 
 def build_block(ckpt, model : TransformerBlockDecoder, prefix, has_cross_attn):
     build_parameter(f"{prefix}.self_attn.layer_norm.weight", model.layer_nrom_before_self_attn.weight, ckpt)
-    scale_build_parameter(f"{prefix}.self_attn.self_attn.project.weight", model.self_attention.w_project_qkv, model.self_attention.w_project_qkv_scale, 1, ckpt)
+
+    ckpt[f"{prefix}.self_attn.self_attn.project.weight"] = split(ckpt[f"{prefix}.self_attn.self_attn.project.weight"], 3)
+    scale_build_parameter(f"{prefix}.self_attn.self_attn.project.weight", model.self_attention.w_project_qkv, model.self_attention.w_project_qkv_scale, -1, ckpt)
     scale_build_parameter(f"{prefix}.self_attn.self_attn.dense.weight", model.self_attention.w_out, model.self_attention.w_out_scale, 1, ckpt)
 
 
@@ -65,9 +74,10 @@ def build_model(ckpt, model : CPM2):
     
     ret = []
     for i in range(24):
-        ret.append(ckpt[f"decoder.blocks.{i}.cross_attn.cross_attn.project_kv.weight"].cpu().numpy())
-    v = np.stack(ret)
-    ckpt["encoder_kv.weight"] = torch.from_numpy(v)
+        ret.append( split(ckpt[f"decoder.blocks.{i}.cross_attn.cross_attn.project_kv.weight"], 2))
+    ckpt["encoder_kv.weight"] = torch.stack(ret)
+
+
     scale_build_parameter("encoder_kv.weight", model.encoder_kv.w_project_kv, model.encoder_kv.w_project_kv_scale, -1, ckpt)
     build_encoder(ckpt, model)
     build_decoder(ckpt, model)

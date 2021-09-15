@@ -3,7 +3,7 @@ from tqdm import tqdm
 import requests
 
 
-_SOURCE_URL_PREFIX = "https://thunlp.oss-cn-qingdao.aliyuncs.com/bigmodels/"
+_SOURCE_URL_PREFIX = "https://thunlp.oss-cn-qingdao.aliyuncs.com/bminf/"
 _CACHE_PATH = os.path.expanduser("~/.cache/bigmodels/")
 
 

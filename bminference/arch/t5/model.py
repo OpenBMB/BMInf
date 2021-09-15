@@ -263,7 +263,7 @@ class T5(Seq2SeqModel):
                     self.max_decoder_length
                 )
 
-                past_kv = self.variable_allocator.alloc_array((self.num_decoder, batch_size, 2, self.num_heads, self.dim_qkv, self.max_decoder_length), dtype=cupy.float16)
+                past_kv = self.variable_allocator.alloc_array((self.num_decoder, 2, batch_size, self.num_heads, self.dim_qkv, self.max_decoder_length), dtype=cupy.float16)
                 past_kv[:] = 0
                 
                 encoder_mask = self.input_mask.forward(self.variable_allocator, input_length, seq_ipt_len)[:, :, 0]
@@ -309,10 +309,10 @@ class T5(Seq2SeqModel):
                     x = self.decoder[i].forward(
                         self.variable_allocator,
                         x,                          # (batch, dim_model)
-                        past_kv[i],                 # (batch, 2, num_heads, dim_kv, max_decoder_length)
+                        past_kv[i],                 # (2, batch, num_heads, dim_kv, max_decoder_length)
                         step_pos,                   # 1
                         encoder_mask,               # (batch, seq_ipt_len)
-                        encoder_layers_kv[i],    # (batch, 2, num_heads, dim_kv, seq_ipt_len)
+                        encoder_layers_kv[i],       # (2, batch, num_heads, dim_kv, seq_ipt_len)
                         dec_position_bias,          # (1, num_heads, max_decoder_length, max_decoder_length)
                         True
                     )

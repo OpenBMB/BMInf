@@ -2,9 +2,7 @@ import bminference
 
 def main():
     print("Loading model")
-    config = bminference.models.EVA2Configuration()
-    config.MODEL_NAME = "file:///root/.cache/bigmodels/eva2/"
-    eva2 = bminference.models.EVA2(config=config)
+    eva2 = bminference.models.EVA2()
     
     context = []
     while True:

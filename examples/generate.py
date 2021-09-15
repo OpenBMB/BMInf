@@ -23,9 +23,7 @@ input_text = """天空是蔚蓝色，窗外有"""
 
 def main():
     print("Loading model")
-    config = bminference.models.CPM2Configuration()
-    config.MODEL_NAME = "file:///root/.cache/bigmodels/cpm2/"
-    cpm2 = bminference.models.CPM2(config=config)
+    cpm2 = bminference.models.CPM2()
     print("Start")
     generate(cpm2, input_text)
 
