@@ -6,8 +6,8 @@ def fill_blank(cpm2 : bminference.models.CPM2, text : str):
     print("Input: ", text.replace(TOKEN_SPAN,  "\033[4m____\033[0m") )
     for result in cpm2.generate(input_text, 
             top_p=1.0,
-            top_n=10, 
-            temperature=0.9,
+            top_n=5, 
+            temperature=0.5,
             frequency_penalty=0,
             presence_penalty=0
         ):
