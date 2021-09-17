@@ -14,6 +14,8 @@ CONFIG = {
 def lookup_dll(prefix):
     paths = os.environ.get("PATH", "").split(os.pathsep)
     for path in paths:
+        if not os.path.exists(path):
+            continue
         for name in os.listdir(path):
             if name.startswith(prefix) and name.lower().endswith(".dll"):
                 return os.path.join(path, name)
