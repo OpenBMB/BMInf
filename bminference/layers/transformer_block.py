@@ -1,10 +1,10 @@
-from typing import Optional
+from typing import List, Optional
 
 import cupy
 from .base import Layer
-from .attention import SelfAttention, PartialAttention
-from .dense_gelu_dense import DenseGeluDense
-from .layer_norm import LayerNorm
+from .attention import SelfAttention, PartialAttention, GPTAttention
+from .dense_gelu_dense import DenseGeluDense, GPTDenseGeluDense
+from .layer_norm import LayerNorm, GPTLayerNorm
 from ..allocator import Allocator
 import logging
 logger = logging.getLogger(__name__)
@@ -78,10 +78,10 @@ class TransformerBlockDecoder(Layer):
 
     def forward(self, allocator : Allocator, 
             curr_hidden_state : cupy.ndarray,   # (batch, dim_model)
-            past_kv : cupy.ndarray,             # (batch, 2, num_heads, dim_kv, max_decoder_length)
+            past_kv : cupy.ndarray,             # (2, batch, num_heads, dim_kv, max_decoder_length)
             decoder_length : int,               # int
             encoder_mask : cupy.ndarray,        # (batch, encoder_len)
-            encoder_kv : cupy.ndarray,          #  (batch, 2, num_heads, dim_kv, seq_ipt_len)
+            encoder_kv : cupy.ndarray,          # (2, batch, num_heads, dim_kv, seq_ipt_len)
             self_attn_position_bias : Optional[cupy.ndarray] = None, # (1, num_heads, max_decoder_length, max_decoder_length)
             inplace : bool = True,
         ):
@@ -153,3 +153,99 @@ class TransformerBlockDecoder(Layer):
         curr_hidden_state += ff_out[:, :, 0]
         return curr_hidden_state
         
+
+class TransformerBlockGPT(Layer):
+    def __init__(self, dim_model, dim_ff, dim_qkv, num_heads):
+        self.dim_model = dim_model
+        self.num_heads = num_heads
+        self.dim_qkv = dim_qkv
+
+        self.layer_nrom_before_self_attn = GPTLayerNorm(dim_model)
+        self.self_attention = GPTAttention(dim_model, dim_qkv, num_heads)
+
+        self.layer_nrom_before_ff = GPTLayerNorm(dim_model)
+        self.dense_gelu_dense = GPTDenseGeluDense(dim_model, dim_ff)
+
+    def forward(self, allocator : Allocator, 
+            hidden_state : cupy.ndarray, 
+            attention_mask : cupy.ndarray,
+            past_kv : cupy.ndarray,
+            inplace : bool = True
+        ):
+        if not cupy.issubdtype(hidden_state.dtype, cupy.floating):
+            raise NotImplementedError("transformer block for integer input is not implemented")
+        batch_size, dim_model, seq_len = hidden_state.shape
+        assert dim_model == self.dim_model
+
+        tensor_out = hidden_state
+        assert hidden_state.dtype == cupy.float16
+        logger.info("Encoder transformer block -- layer norm self-attn")
+        x = self.layer_nrom_before_self_attn.forward(allocator, hidden_state) # copy hidden state, e -> e
+        assert x.dtype == cupy.float16
+        assert x.shape == (batch_size, dim_model, seq_len)
+
+        logger.info("Encoder transformer block -- self attention")
+        x = self.self_attention.forward(allocator, x, attention_mask, past_kv)
+        assert x.dtype == cupy.float16
+        assert x.shape == (batch_size, dim_model, seq_len)
+
+        if inplace:
+            tensor_out += x
+        else:
+            tensor_out = tensor_out + x # copied here
+        logger.info("Encoder transformer block -- layer norm ff")
+        x = self.layer_nrom_before_ff.forward(allocator, tensor_out)
+        assert x.dtype == cupy.float16
+        assert x.shape == (batch_size, dim_model, seq_len)
+
+        logger.info("Encoder transformer block -- ff")
+        x = self.dense_gelu_dense.forward(allocator, x)
+        assert x.dtype == cupy.float16
+        assert x.shape == (batch_size, dim_model, seq_len)
+
+        tensor_out += x
+        return tensor_out
+    
+    def forward_partial(self, allocator : Allocator, 
+            curr_hidden_state : cupy.ndarray,   # (batch, dim_model)
+            decoder_length : List[int],         # int
+            past_kv : cupy.ndarray,             # (2, batch, num_heads, dim_kv, max_length)
+            past_kv_mask : cupy.ndarray,        # (1#batch, past_kv_len)
+            inplace : bool = True,
+        ):
+
+        batch_size, dim_model = curr_hidden_state.shape
+        assert dim_model == self.dim_model
+        max_length = past_kv.shape[-1]
+        assert past_kv.shape == (2, batch_size, self.num_heads, self.dim_qkv, max_length)
+        
+        tensor_out = curr_hidden_state
+        assert curr_hidden_state.dtype == cupy.float16
+        logger.info("GPT-partial transformer block -- layer norm self-attn")
+        x = self.layer_nrom_before_self_attn.forward(allocator, curr_hidden_state[:, :, cupy.newaxis])[:, :, 0] # copy hidden state, e -> e
+        assert x.dtype == cupy.float16
+        assert x.shape == (batch_size, dim_model)
+
+        logger.info("GPT-partial transformer block -- self attention")
+
+        x = self.self_attention.forward_partial(allocator, x, past_kv, past_kv_mask, decoder_length)
+        assert x.dtype == cupy.float16
+        assert x.shape == (batch_size, dim_model)
+
+        if inplace:
+            tensor_out += x
+        else:
+            tensor_out = tensor_out + x # copied here
+
+        logger.info("Encoder transformer block -- layer norm ff")
+        x = self.layer_nrom_before_ff.forward(allocator, tensor_out[:, :, cupy.newaxis])
+        assert x.dtype == cupy.float16
+        assert x.shape == (batch_size, dim_model, 1)
+
+        logger.info("Encoder transformer block -- ff")
+        x = self.dense_gelu_dense.forward(allocator, x)
+        assert x.dtype == cupy.float16
+        assert x.shape == (batch_size, dim_model, 1)
+
+        tensor_out += x[:, :, 0]
+        return tensor_out

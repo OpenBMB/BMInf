@@ -1,21 +1,23 @@
 import bminference
 from tqdm import tqdm
 
-def generate(model : bminference.models.CPM2, sentence):
+def generate(model : bminference.models.CPM1, sentence):
     with tqdm() as progress_bar:
         progress_bar.write(sentence)
         while True:
-            value = model.generate(sentence + "<span>", 
-                temperature=1.1, 
-                top_p=0.9, 
-                top_n=20, 
-                frequency_penalty=5,
+            result = model.generate(
+                sentence, 
+                max_tokens=8,
+                top_n=5,
+                top_p=None,
+                temperature=0.85,
+                frequency_penalty=0,
                 presence_penalty=0
-            )[0]["text"]
-            sentence += value
+            )
+            sentence += result
             progress_bar.write(sentence)
             progress_bar.update(1)
-            if value.find("<eod>") != -1:
+            if result.find("<eod>") != -1:
                 break
             
 
@@ -23,7 +25,7 @@ input_text = """天空是蔚蓝色，窗外有"""
 
 def main():
     print("Loading model")
-    cpm2 = bminference.models.CPM2()
+    cpm2 = bminference.models.CPM1()
     print("Start")
     generate(cpm2, input_text)
 

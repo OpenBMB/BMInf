@@ -60,9 +60,9 @@ class EVA2(T5):
     def dialogue(self, 
             context : List[str],
             max_tokens : int = 128,
-            top_n : Optional[int] = None,
+            top_n : Optional[int] = 10,
             top_p : Optional[float] = None,
-            temperature : float = 0.9,
+            temperature : float = 0.85,
             frequency_penalty : float = 0,
             presence_penalty : float = 0,
             truncation_length : Optional[int] = 256

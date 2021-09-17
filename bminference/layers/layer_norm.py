@@ -44,3 +44,32 @@ class LayerNorm(Layer):
         cupy.multiply(dqv, self.weight.value[cupy.newaxis,:,cupy.newaxis], out=nw_dqv)
 
         return nw_dqv
+
+class GPTLayerNorm(Layer):
+    def __init__(self, dim_in):
+        self.dim_model = dim_in
+        self.weight = Parameter((dim_in,), dtype=cupy.float16)
+        self.bias = Parameter((dim_in,), dtype=cupy.float16)
+        
+
+    def forward(self, allocator : Allocator, x : cupy.ndarray):
+        # forward inplace        
+
+        batch_size, dim_model, seq_len = x.shape
+        assert dim_model == self.dim_model
+        assert x.dtype == cupy.float16
+
+        x_fp32 = allocator.alloc_array(x.shape, cupy.float32)
+        elementwise_copy(x, x_fp32)
+        x_mean = allocator.alloc_array((batch_size, 1, seq_len), cupy.float32)
+        x_var = allocator.alloc_array((batch_size, 1, seq_len), cupy.float32)
+        
+        x_mean = cupy.mean(x_fp32, axis=1, out=x_mean, keepdims=True)
+        x_var = cupy.var(x_fp32, axis=1, out=x_var, keepdims=True)
+
+        x_var += 0.000001
+        cupy.sqrt(x_var, out=x_var)
+        x_fp32 = ((x_fp32 - x_mean) / x_var) * self.weight.value[cupy.newaxis, :, cupy.newaxis] + self.bias.value[cupy.newaxis, :, cupy.newaxis]
+        x_fp16 = allocator.alloc_array(x.shape, cupy.float16)
+        elementwise_copy(x_fp32, x_fp16)
+        return x_fp16

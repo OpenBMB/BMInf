@@ -14,9 +14,6 @@ class LMModel(Model):
 
     def encode(self, input_idx : np.ndarray, input_length : List[int]) -> InferenceContext:
         raise NotImplementedError()
-    
-    def init_decoder_context(self, ctx : InferenceContext):
-        return self._init_decoder_context(ctx)
 
     def decode_step(self, ctx : InferenceContext, inputs : Union[List[int], np.ndarray]) -> cupy.ndarray:
         raise NotImplementedError()

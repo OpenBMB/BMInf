@@ -1,13 +1,7 @@
 from ..base import InferenceContext
 
-class T5InferenceContext(InferenceContext):
-    def __init__(self, hidden_states, input_length):
-        self.hidden_states = hidden_states
+class GPTInferenceContext(InferenceContext):
+    def __init__(self, past_kv, input_length):
+        self.past_kv = past_kv
         self.input_length = input_length
-        self.batch_size = len(input_length)
-
-        self.encoder_layers_kv = None
-        self.decoder_position_bias = None
-        self.past_kv = None
-        self.encoder_mask = None
-        self.step_pos = None
+        

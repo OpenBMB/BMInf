@@ -1,15 +1,15 @@
-import threading
-from typing import List, Union
+from bminference.layers.lm_head import LMHead
+from typing import List, Tuple, Union
 import cupy
 from ..lm import LMModel
-from ...layers.transformer_block import TransformerBlockEncoder
+from ...layers.transformer_block import TransformerBlockGPT
 from ...layers.embedding import Embedding
-from ...layers.layer_norm import LayerNorm
+from ...layers.layer_norm import GPTLayerNorm
 from ...layers.mask import InputMask
 from ...layers.layer_list import LayerList
 from .config import GPTConfiguration
 from .tokenizer import GPT2Tokenizer
-from .context import T5InferenceContext
+from .context import GPTInferenceContext
 from ...allocator import ReusedAllocator, SizeLimitedAllocator
 import numpy as np
 import logging
@@ -22,31 +22,27 @@ class GPT(LMModel):
         # Build Model
         logger.info("Building model")
         
-        self.memory_overlap = config.MEMORY_OVERLAP
         self.max_overlap_layers = config.NUM_LAYERS
-        if self.memory_overlap:
-            self.overlap_layers = min(config.OVERLAP_LAYERS, self.max_overlap_layers)
-        else:
-            self.overlap_layers = self.max_overlap_layers
-
         self.max_length = config.MAX_LENGTH
         self.dim_model = config.DIM_MODEL
 
         logger.info("============ GPT ==============")
-        logger.info("MEM_OVERLAP: %s", self.memory_overlap)
-        logger.info("OVERLAP_LAYERS: %s", self.overlap_layers)
         logger.info("MAX_LENGTH: %s", self.max_length)
 
         self.input_embedding = Embedding(config.VOCAB_SIZE, config.DIM_MODEL)
         self.position_embedding = Embedding(config.MAX_LENGTH, config.DIM_MODEL)
         self.input_mask = InputMask(is_decoder=True)
 
+        self._lmhead = LMHead(config.VOCAB_SIZE, config.DIM_MODEL)
+        self._lmhead.weight = self.input_embedding.weight   # share parameter
+
         self.num_layers = config.NUM_LAYERS
         self.layers = LayerList([
-            TransformerBlockEncoder(config.DIM_MODEL, config.DIM_FF, config.DIM_KV, config.NUM_HEADS)
+            TransformerBlockGPT(config.DIM_MODEL, config.DIM_FF, config.DIM_KV, config.NUM_HEADS)
+            for _ in range(self.num_layers)
         ])
         
-        self.encoder_final_layer_nrom = LayerNorm(config.DIM_MODEL)
+        self.encoder_final_layer_nrom = GPTLayerNorm(config.DIM_MODEL)
         self.num_heads = config.NUM_HEADS
         self.dim_qkv = config.DIM_KV
 
@@ -66,131 +62,26 @@ class GPT(LMModel):
                 logger.info("Start loading parameters from cpu to gpu")
                 
                 load_stream = cupy.cuda.Stream()
-                if self.memory_overlap:
-                    mx_size = 0
-                    for i in range(config.NUM_ENCODER_LAYERS):
-                        mx_size = max(self.encoder[i].nbytes, mx_size)
-                    for i in range(config.NUM_DECODER_LAYERS):
-                        mx_size = max(self.decoder[i].nbytes, mx_size)
+                if self.nbytes + config.DYNAMIC_MEMORY > config.MEMORY_LIMIT:
+                    raise ValueError("memory limit not enough, at least %d bytes, but got %d bytes" % (self.nbytes + config.DYNAMIC_MEMORY, config.MEMORY_LIMIT))
+                
+                logger.info("Using static loader: total: %d, dynamic_memory %d, memory_limit %d", self.nbytes, config.DYNAMIC_MEMORY, config.MEMORY_LIMIT)
+                self.parameter_allocator = ReusedAllocator(self.nbytes)
+                self.variable_allocator = SizeLimitedAllocator(config.MEMORY_LIMIT - self.nbytes)
 
-                    if self.overlap_layers >= self.max_overlap_layers:
-                        overlap_size = mx_size * self.max_overlap_layers * 2
-                    elif self.overlap_layers * 2 >= self.max_overlap_layers:
-                        overlap_size = mx_size * self.overlap_layers * 2 + (self.max_overlap_layers - self.overlap_layers) * mx_size
-                    elif self.overlap_layers * 3 >= self.max_overlap_layers:
-                        overlap_size = mx_size * self.overlap_layers * 3 + (self.max_overlap_layers - self.overlap_layers * 2) * mx_size
-                    else:
-                        overlap_size = mx_size * self.overlap_layers * 4
-
-                    other_size = self.nbytes - self.encoder.nbytes - self.decoder.nbytes
-
-                    logger.info("Using overlap loader: overlap_size %d, other_size: %d, dynamic_memory %d, memory_limit %d", overlap_size, other_size, config.DYNAMIC_MEMORY, config.MEMORY_LIMIT)
-                    if overlap_size + other_size + config.DYNAMIC_MEMORY > config.MEMORY_LIMIT:
-                        raise ValueError("memory limit not enough, at least %d bytes, but got %d bytes" % (overlap_size + other_size + config.DYNAMIC_MEMORY, config.MEMORY_LIMIT))
-                    self.parameter_allocator = ReusedAllocator(other_size + (mx_size * self.overlap_layers * 2))
-
-                    if self.overlap_layers >= self.max_overlap_layers:
-                        self.overlap_allocator = [None, None]
-                    elif self.overlap_layers * 2 >= self.max_overlap_layers:
-                        self.overlap_allocator = [None, ReusedAllocator( (self.max_overlap_layers - self.overlap_layers) * mx_size )]
-                    elif self.overlap_layers * 3 >= self.max_overlap_layers:
-                        self.overlap_allocator = [ReusedAllocator( (self.max_overlap_layers - self.overlap_layers * 2) * mx_size ), ReusedAllocator( self.overlap_layers * mx_size )]
-                    else:
-                        self.overlap_allocator = [ReusedAllocator( self.overlap_layers * mx_size ), ReusedAllocator( self.overlap_layers * mx_size )]
-                    self.overlap_allocator_status = [None, None]
-                    self.variable_allocator = SizeLimitedAllocator(config.MEMORY_LIMIT - other_size - overlap_size)
-
-                    for name, layer in self._sub_layers.items():
-                        if name in ["encoder", "decoder"]:
-                            # move first overlap_size layers to device
-                            for i in range(min(self.overlap_layers, len(layer))):
-                                layer[i].to_device( self.parameter_allocator, load_stream )
-                        else:
-                            layer.to_device( self.parameter_allocator, load_stream  )
-                else:
-                    if self.nbytes + config.DYNAMIC_MEMORY > config.MEMORY_LIMIT:
-                        raise ValueError("memory limit not enough, at least %d bytes, but got %d bytes" % (self.nbytes + config.DYNAMIC_MEMORY, config.MEMORY_LIMIT))
-                    
-                    logger.info("Using static loader: total: %d, dynamic_memory %d, memory_limit %d", self.nbytes, config.DYNAMIC_MEMORY, config.MEMORY_LIMIT)
-                    self.parameter_allocator = ReusedAllocator(self.nbytes)
-                    self.variable_allocator = SizeLimitedAllocator(config.MEMORY_LIMIT - self.nbytes)
-
-                    self.to_device(self.parameter_allocator, load_stream)
+                self.to_device(self.parameter_allocator, load_stream)
                 
                 self.device.synchronize()
-                self.load_stream = cupy.cuda.Stream(non_blocking=True)
                 self.calc_stream = cupy.cuda.Stream(non_blocking=True)
                 with self.calc_stream:
                     self.variable_allocator.alloc(config.DYNAMIC_MEMORY) # preallocate
                 self.device.synchronize()
 
             logger.info("Cleaning useless parameters on cpu")
-            if self.memory_overlap:
-                for name, layer in self._sub_layers.items():
-                    if name in ["encoder", "decoder"]:
-                        # move first overlap_size layers to device
-                        pass
-                    else:
-                        layer._remove_data()
-                
-                for i in range(self.max_overlap_layers):
-                    if i < self.overlap_layers:
-                        self.encoder[i]._remove_data()
-                        self.decoder[i]._remove_data()
-                    else:
-                        if i < self.num_encoder:
-                            self.encoder[i]._try_pinned()
-                        if i < self.num_decoder:
-                            self.decoder[i]._try_pinned()
-            else:
-                self._remove_data()
+            self._remove_data()
             logger.info("End of model initialization")
 
-    def encode_loader(self, barrier, load_stream):
-        with self.device:
-            for i in range(self.num_encoder):
-                if i % self.overlap_layers == 0:
-                    load_stream.synchronize()
-                    barrier.wait()
-                    # sync here
-
-                    if i + self.overlap_layers < self.num_encoder:
-                        overlap_idx = ((i + self.overlap_layers) // self.overlap_layers) % 2
-                        if self.overlap_allocator_status[overlap_idx] == i + 1:
-                            continue
-                        else:
-                            olp_allocator = self.overlap_allocator[overlap_idx]
-                            olp_allocator.reset()
-                            for j in range(i + self.overlap_layers, min(i + self.overlap_layers * 2, self.num_encoder)):
-                                logger.info("Load encoder layer %d", j)
-                                self.encoder[j].to_device(olp_allocator, load_stream)
-                            self.overlap_allocator_status[overlap_idx] = i + 1
-
-    def decode_loader(self, barrier, load_stream):
-        with self.device:
-            for i in range(self.num_decoder):
-                if i % self.overlap_layers == 0:
-                    load_stream.synchronize()
-                    barrier.wait()
-                    # sync here
-
-                    if i + self.overlap_layers < self.num_decoder:
-                        overlap_idx = ((i + self.overlap_layers) // self.overlap_layers) % 2
-                        if self.overlap_allocator_status[overlap_idx] == -(i + 1):
-                            continue
-                        else:
-                            olp_allocator = self.overlap_allocator[overlap_idx]
-                            olp_allocator.reset()
-                            for j in range(i + self.overlap_layers, min(i + self.overlap_layers * 2, self.num_decoder)):
-                                logger.info("Load decoder layer %d", j)
-                                self.decoder[j].to_device(olp_allocator, load_stream)
-                            self.overlap_allocator_status[overlap_idx] = -(i + 1)
-
-
-    def encode(self, input_idx : np.ndarray, input_length : List[int]):
-        barrier = threading.Barrier(2)
-        load_thread = threading.Thread(target=self.encode_loader, args=(barrier, self.load_stream), daemon=True)
-        load_thread.start()
+    def encode(self, input_idx : np.ndarray, input_length : List[int]) -> Tuple[cupy.ndarray, GPTInferenceContext]:
         with self.device:
             calc_stream = self.calc_stream
 
@@ -198,114 +89,74 @@ class GPT(LMModel):
             with calc_stream:
                 x = self.input_embedding.forward(self.variable_allocator, input_idx)
                 encoder_attn_mask = self.input_mask.forward(self.variable_allocator, input_length, seq_len)
-                x = x.transpose((0, 2, 1))
+                x = x.transpose((0, 2, 1))      # (batch_size, dim_model, seq_len)
                 assert x.dtype == cupy.float16
 
-                x_pos = self.encoder_position_bias.forward(self.variable_allocator, seq_len, seq_len)
-                assert x_pos.shape == (1, self.num_heads, seq_len, seq_len)
+                x_pos = self.position_embedding.forward(self.variable_allocator, list(range(seq_len)))  # (seq_len, dim_model)
+                x_pos = x_pos.T[cupy.newaxis]   # (1#batch_size, dim_model, seq_len)
+                assert x_pos.shape == (1, self.dim_model, seq_len)
                 assert x_pos.dtype == cupy.float16
 
-            for i in range(self.num_encoder):
-                if i % self.overlap_layers == 0:
-                    calc_stream.synchronize()
-                    barrier.wait()
-                    barrier.reset()
-                    # sync
+                x += x_pos
 
+                past_kv = self.variable_allocator.alloc_array((self.num_layers, 2, batch_size, self.num_heads, self.dim_qkv, self.max_length), dtype=cupy.float16)
+                past_kv[:] = 0
+
+            for i in range(self.num_layers):
                 logger.info("Calc encoder layer %d", i)
                 with calc_stream:
-                    x = self.encoder[i].forward(
+                    x = self.layers[i].forward(
                         self.variable_allocator, 
                         x,
                         encoder_attn_mask,
-                        x_pos,
+                        past_kv[i],
                         True
                     )
             with calc_stream:
                 x = self.encoder_final_layer_nrom.forward(self.variable_allocator, x)
+                last_out = []
+                for i, pos in enumerate(input_length):
+                    last_out.append( x[i, :, pos - 1] )
+                last_out = cupy.stack(last_out)
+                x = self._lmhead.forward(self.variable_allocator, last_out)
             calc_stream.synchronize()
-            load_thread.join()
-            return T5InferenceContext(x, input_length)    # (batch, dim_model, seq_len)
+            return x, GPTInferenceContext(past_kv, input_length)    # (batch, dim_model, seq_len)
     
-    def _init_decoder_context(self, ctx : T5InferenceContext):
-        hidden_state = ctx.hidden_states
-        input_length = ctx.input_length
-        
-        if self.encoder_only:
-            raise ValueError("T5-encoder only")
-        with self.device:
-            with self.calc_stream:
-                batch_size, _, seq_ipt_len = hidden_state.shape
-
-                # (batch, num_decoder, 2, num_heads, dim_kv, seq_ipt_len),
-                encoder_layers_kv = self.encoder_kv.forward(self.variable_allocator, hidden_state)
-
-                # (1, num_heads, max_decoder_length, max_decoder_length)
-                dec_pos = self.decoder_position_bias.forward(
-                    self.variable_allocator,
-                    self.max_decoder_length,
-                    self.max_decoder_length
-                )
-
-                past_kv = self.variable_allocator.alloc_array((self.num_decoder, batch_size, 2, self.num_heads, self.dim_qkv, self.max_decoder_length), dtype=cupy.float16)
-                past_kv[:] = 0
-                
-                encoder_mask = self.input_mask.forward(self.variable_allocator, input_length, seq_ipt_len)[:, :, 0]
-
-
-                ctx.encoder_layers_kv = encoder_layers_kv
-                ctx.decoder_position_bias = dec_pos
-                ctx.past_kv = past_kv
-                ctx.encoder_mask = encoder_mask
-                ctx.step_pos = 0
-
     def decode_step(self,
-            ctx : T5InferenceContext,
+            ctx : GPTInferenceContext,
             inputs : Union[List[int], np.ndarray]
         ) -> cupy.ndarray:
-
         past_kv = ctx.past_kv
-        encoder_layers_kv = ctx.encoder_layers_kv
-        dec_position_bias = ctx.decoder_position_bias
-        encoder_mask = ctx.encoder_mask
+        input_length = ctx.input_length
         step_input = inputs
-        step_pos = ctx.step_pos
-        ctx.step_pos += 1
-    
-        barrier = threading.Barrier(2)
-        load_thread = threading.Thread(target=self.decode_loader, args=(barrier, self.load_stream), daemon=True)
-        load_thread.start()
 
         with self.device:
             calc_stream = self.calc_stream
 
             with calc_stream:
                 x = self.input_embedding.forward(self.variable_allocator, step_input)    # (batch, dim_model)
-            for i in range(self.num_decoder):
-                if i % self.overlap_layers == 0:
-                    calc_stream.synchronize()
-                    barrier.wait()
-                    barrier.reset()
-                    # sync
+                past_kv_mask = cupy.repeat(cupy.arange(self.max_length)[cupy.newaxis], len(inputs), axis=0)
+                past_kv_mask = (past_kv_mask <= cupy.array(input_length, dtype=cupy.int64)[:, cupy.newaxis]) # (batch, max_len)
+                x_pos = self.position_embedding.forward(self.variable_allocator, input_length)  # (batch, dim_model)
+                x += x_pos
+            for i in range(self.num_layers):
                 logger.info("Calc decoder layer %d", i)
 
                 with calc_stream:
-                    x = self.decoder[i].forward(
+                    x = self.layers[i].forward_partial(
                         self.variable_allocator,
                         x,                          # (batch, dim_model)
-                        past_kv[i],                 # (batch, 2, num_heads, dim_kv, max_decoder_length)
-                        step_pos,                   # 1
-                        encoder_mask,               # (batch, seq_ipt_len)
-                        encoder_layers_kv[i],    # (batch, 2, num_heads, dim_kv, seq_ipt_len)
-                        dec_position_bias,          # (1, num_heads, max_decoder_length, max_decoder_length)
+                        input_length,               # List[int]
+                        past_kv[i],                 # (2, batch, num_heads, dim_qkv, max_length)
+                        past_kv_mask,               # (batch, max_length)
                         True
                     )
             with calc_stream:
-                x = self.decoder_final_layer_nrom.forward(self.variable_allocator, x[:, :, cupy.newaxis])[:, :, 0]
-                x = self.lm_head.forward(self.variable_allocator, x)
-            calc_stream.synchronize()
-            load_thread.join()
-            return x
+                x = self.encoder_final_layer_nrom.forward(self.variable_allocator, x[:, :, cupy.newaxis])[:, :, 0]
+                x = self._lmhead.forward(self.variable_allocator, x)
+        ctx.input_length = [ x + 1 for x in input_length ]
+        calc_stream.synchronize()
+        return x
     
     def _text_to_id(self, sentence):
         return self.tokenizer.encode(sentence)
