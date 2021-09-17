@@ -1,5 +1,5 @@
 import time
-import bminference
+import bminf
 import numpy as np
 import cupy
 from tqdm import tqdm
@@ -13,7 +13,7 @@ def get_args():
     parser.add_argument('--cases', type=int, default=20, help="Num test cases")
     return parser.parse_args()
 
-def test(model : bminference.models.CPM2, batch_size, input_length):
+def test(model : bminf.models.CPM2, batch_size, input_length):
     input_idx = np.arange(input_length)[np.newaxis].repeat(batch_size, axis=0)
     input_len = [input_length] * batch_size
     model.encode( input_idx, input_len )
@@ -23,7 +23,7 @@ def main():
 
     print("Loading model")
     device_idx = args.device
-    cpm2 = bminference.models.CPM2(device=device_idx)
+    cpm2 = bminf.models.CPM2(device=device_idx)
     device = cupy.cuda.Device(device_idx)
 
     test(cpm2, args.batch_size, args.input_length)

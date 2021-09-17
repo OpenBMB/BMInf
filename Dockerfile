@@ -6,5 +6,5 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 RUN pip3 install setuptools
 ARG version
-RUN pip3 install bminference==$version
+RUN pip3 install bminf==$version
 ADD examples examples
