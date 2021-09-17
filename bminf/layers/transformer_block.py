@@ -188,7 +188,6 @@ class TransformerBlockGPT(Layer):
         x = self.self_attention.forward(allocator, x, attention_mask, past_kv)
         assert x.dtype == cupy.float16
         assert x.shape == (batch_size, dim_model, seq_len)
-
         if inplace:
             tensor_out += x
         else:

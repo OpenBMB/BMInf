@@ -6,15 +6,24 @@ from ..allocator import Allocator
 from ..functions.scale_copy import elementwise_copy
 
 l2norm_kernel = cupy.ReductionKernel(
-    'T x',
+    'T x, T eps',
     'T y',
     'x * x',
     'a + b',
-    'y = rsqrt( a / _type_reduce(_in_ind.size() / _out_ind.size()) + 0.000001 ) ',
+    'y = rsqrt( a / _type_reduce(_in_ind.size() / _out_ind.size()) + eps ) ',
     '0',
     'bms_l2norm'
 )
 
+ggg = cupy.ReductionKernel(
+    'T x',
+    'T y',
+    'x * x',
+    'a + b',
+    'y = a / _type_reduce(_in_ind.size() / _out_ind.size()) ',
+    '0',
+    'ggg'
+)
 
 class LayerNorm(Layer):
     def __init__(self, dim_in):
@@ -37,7 +46,7 @@ class LayerNorm(Layer):
         out = allocator.alloc_array((batch_size, 1, seq_len), cupy.float32)
 
         
-        l2norm_kernel(dqv, axis=1, keepdims=True, out=out)
+        l2norm_kernel(dqv, 1e-6, axis=1, keepdims=True, out=out)
 
         dqv *= out
         nw_dqv = allocator.alloc_array(dqv.shape, dtype=cupy.float16)
@@ -65,11 +74,9 @@ class GPTLayerNorm(Layer):
         x_var = allocator.alloc_array((batch_size, 1, seq_len), cupy.float32)
         
         x_mean = cupy.mean(x_fp32, axis=1, out=x_mean, keepdims=True)
-        x_var = cupy.var(x_fp32, axis=1, out=x_var, keepdims=True)
+        l2norm_kernel(x_fp32 - x_mean, 1e-5, axis=1, keepdims=True, out=x_var)
 
-        x_var += 0.000001
-        cupy.sqrt(x_var, out=x_var)
-        x_fp32 = ((x_fp32 - x_mean) / x_var) * self.weight.value[cupy.newaxis, :, cupy.newaxis] + self.bias.value[cupy.newaxis, :, cupy.newaxis]
+        x_fp32 = ((x_fp32 - x_mean) * x_var) * self.weight.value[cupy.newaxis, :, cupy.newaxis] + self.bias.value[cupy.newaxis, :, cupy.newaxis]
         x_fp16 = allocator.alloc_array(x.shape, cupy.float16)
         elementwise_copy(x_fp32, x_fp16)
         return x_fp16

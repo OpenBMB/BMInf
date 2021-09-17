@@ -8,6 +8,7 @@ from ..functions.quantization import quantize
 from ..functions.scale_copy import elementwise_copy_scale
 from ..functions.gemm import igemm, fgemm
 from ..functions.attention_mask import mask_attention_kernel
+import math
 
 class SelfAttention(Layer):
     def __init__(self, dim_in, dim_qkv, num_heads):
@@ -420,7 +421,7 @@ class GPTAttention(Layer):
             True, 
             attention_score.reshape(batch_size * self.num_heads, seq_len, seq_len)
         )
-            
+        attention_score /= math.sqrt(self.dim_qkv)
         
         # attention_score: batch, num_heads, s_k, s_q
         # add bias
@@ -548,6 +549,9 @@ class GPTAttention(Layer):
             True,
             attention_score.reshape(batch_size * self.num_heads, past_kv_len, 1)  # (batch_size * num_heads, past_kv_len, 1)
         )
+
+        attention_score /= math.sqrt(self.dim_qkv)
+        
         # mask
         mask_attention_kernel(
             past_kv_mask[:, cupy.newaxis, :, cupy.newaxis], # (batch, 1#num_heads, past_kv_len, 1)

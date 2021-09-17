@@ -26,7 +26,8 @@ quantize_scale_kernel = create_reduction_func(
     ('min_max_st<type_in0_raw>(in0)', 'my_max(a, b)', 'out0 = abs(a.value) / 127',
      'min_max_st<type_in0_raw>'), None, _min_max_preamble)
 
-quantize_copy = create_ufunc('bms_quantize_copy', ('ee->b', 'fe->b', 'ff->b'), 'out0 = round(in0 / in1)')
+quantize_copy_half = create_ufunc('bms_quantize_copy_half', ('ee->b', 'fe->b', 'ff->b'), 'out0 = nearbyintf(half(in0 / in1))')
+quantize_copy_float = create_ufunc('bms_quantize_copy_float', ('ee->b', 'fe->b', 'ff->b'), 'out0 = nearbyintf(float(in0 / in1))')
 
 def quantize(x : cupy.ndarray, out : cupy.ndarray, scale : cupy.ndarray, axis=-1):
     assert x.dtype == cupy.float16 or x.dtype == cupy.float32
@@ -39,4 +40,4 @@ def quantize(x : cupy.ndarray, out : cupy.ndarray, scale : cupy.ndarray, axis=-1
     assert scale.shape == x.shape[:axis] + (1,) + x.shape[axis + 1:]
 
     quantize_scale_kernel(x, axis=axis, keepdims=True, out=scale) # scale on gpu
-    quantize_copy(x, scale, out=out)
+    quantize_copy_half(x, scale, out=out)
