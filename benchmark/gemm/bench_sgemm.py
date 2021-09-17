@@ -1,6 +1,6 @@
 from tqdm import tqdm
-from bminference.allocator import SizeLimitedAllocator
-from bminference.functions.gemm import fgemm
+from bminf.allocator import SizeLimitedAllocator
+from bminf.functions.gemm import fgemm
 import cupy
 import math
 import random

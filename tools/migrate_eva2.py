@@ -1,8 +1,8 @@
-from bminference.models.eva2 import EVA2Configuration, EVA2
+from bminf.models.eva2 import EVA2Configuration, EVA2
 import torch
 import numpy as np
-from bminference.parameter import Parameter
-from bminference.layers.transformer_block import TransformerBlockDecoder
+from bminf.parameter import Parameter
+from bminf.layers.transformer_block import TransformerBlockDecoder
 
 device = torch.device("cuda:0")
 

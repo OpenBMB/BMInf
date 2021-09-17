@@ -1,7 +1,7 @@
-import bminference
+import bminf
 from tqdm import tqdm
 
-def generate(model : bminference.models.CPM1, sentence):
+def generate(model : bminf.models.CPM1, sentence):
     with tqdm() as progress_bar:
         progress_bar.write(sentence)
         while True:
@@ -25,7 +25,7 @@ input_text = """天空是蔚蓝色，窗外有"""
 
 def main():
     print("Loading model")
-    cpm2 = bminference.models.CPM1()
+    cpm2 = bminf.models.CPM1()
     print("Start")
     generate(cpm2, input_text)
 

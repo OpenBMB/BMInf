@@ -1,7 +1,7 @@
-from bminference.layers.lm_head import LMHead
 from typing import List, Tuple, Union
 import cupy
 from ..lm import LMModel
+from ...layers.lm_head import LMHead
 from ...layers.transformer_block import TransformerBlockGPT
 from ...layers.embedding import Embedding
 from ...layers.layer_norm import GPTLayerNorm

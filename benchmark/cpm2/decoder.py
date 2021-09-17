@@ -1,10 +1,10 @@
 import time
-import bminference
+import bminf
 import numpy as np
 import cupy
 from tqdm import tqdm
 import argparse
-from bminference.arch.t5.context import T5InferenceContext
+from bminf.arch.t5.context import T5InferenceContext
 
 def get_args():
     parser = argparse.ArgumentParser(description='CPM2 encoder benchmark')
@@ -15,7 +15,7 @@ def get_args():
     parser.add_argument('--cases', type=int, default=10, help="Num test cases")
     return parser.parse_args()
 
-def test(model : bminference.models.CPM2, ctx : T5InferenceContext, batch_size, decode_length):
+def test(model : bminf.models.CPM2, ctx : T5InferenceContext, batch_size, decode_length):
     for _ in range(decode_length):
         model.decode_step( ctx, [0] * batch_size)
 
@@ -24,7 +24,7 @@ def main():
 
     print("Loading model")
     device_idx = args.device
-    cpm2 = bminference.models.CPM2(device=device_idx)
+    cpm2 = bminf.models.CPM2(device=device_idx)
     device = cupy.cuda.Device(device_idx)
 
     with device:

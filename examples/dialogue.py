@@ -1,8 +1,8 @@
-import bminference
+import bminf
 
 def main():
     print("Loading model")
-    eva2 = bminference.models.EVA2()
+    eva2 = bminf.models.EVA2()
     
     context = []
     while True:

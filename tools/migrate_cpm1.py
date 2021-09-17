@@ -1,8 +1,8 @@
 import torch
 import numpy as np
-from bminference.models.cpm1 import CPM1, CPM1Configuration
-from bminference.parameter import Parameter
-from bminference.layers.transformer_block import TransformerBlockGPT
+from bminf.models.cpm1 import CPM1, CPM1Configuration
+from bminf.parameter import Parameter
+from bminf.layers.transformer_block import TransformerBlockGPT
 
 device = torch.device("cuda:0")
 
