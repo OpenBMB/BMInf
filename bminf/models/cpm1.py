@@ -57,7 +57,9 @@ class CPM1(GPT):
             top_p,
             temperature,
             frequency_penalty,
-            presence_penalty
+            presence_penalty,
+            no_penalty_tokens=[8],
+            filter_tokens=[self.tokenizer.unk_id]
         )
 
         ret = []
