@@ -42,6 +42,10 @@ class CPM1(GPT):
         ):
         idx = self.text_to_id(input_sentence)
         input_length = len(idx)
+        if input_length + max_tokens > self.max_length:
+            idx = idx[ input_length + max_tokens - self.max_length:]
+            input_length = self.max_length - max_tokens
+            
 
         x, ctx = self.encode(np.array([idx], dtype=np.int64), [input_length])
         sampler = GenerateSampler(
