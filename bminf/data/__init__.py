@@ -1,7 +1,9 @@
 import os
 from tqdm import tqdm
 import requests
+import logging
 
+logger = logging.getLogger(__name__)
 
 _SOURCE_URL_PREFIX = "https://thunlp.oss-cn-qingdao.aliyuncs.com/bminf/"
 _CACHE_PATH = os.path.expanduser("~/.cache/bigmodels/")
@@ -30,13 +32,21 @@ def ensure_file(model_name : str, filename : str):
     if model_name.startswith("file://"):
         return os.path.join(model_name[ len("file://"): ], filename)
     url = _SOURCE_URL_PREFIX + model_name + "/" + filename
-    response = requests.get(url, stream=True)
-    total_size_in_bytes= int(response.headers.get('Content-Length', 0))
 
+    ignore_update = False
+    try:
+        response = requests.get(url, stream=True)
+        total_size_in_bytes= int(response.headers.get('Content-Length', 0))
+    except requests.RequestException:
+        ignore_update = True
+        logger.warning("Failed to connect to the source server")
     target_path = os.path.join(_CACHE_PATH, model_name, filename)
     if os.path.exists( target_path ):
-        if os.stat( target_path ).st_size == total_size_in_bytes or total_size_in_bytes == 0:
+        if ignore_update or os.stat( target_path ).st_size == total_size_in_bytes or total_size_in_bytes == 0:
             return target_path
+
+    if ignore_update:
+        raise ConnectionError("Failed to connect to the source server")
 
     if not os.path.exists( os.path.join(_CACHE_PATH, model_name) ):
         os.makedirs( os.path.join(_CACHE_PATH, model_name) )
