@@ -1,9 +1,4 @@
-# BMInf
-
-English | [简体中文]
-
-[简体中文]: ./README-ZH.md
-
+# Introduction
 BMInf (Big Model Inference) is a low-resource inference package for large-scale pretrained language models (PLMs). It has following features:
 
 - **Hardware Friendly.** BMInf supports running models with more than 10 billion parameters on a single NVIDIA GTX 1060 GPU in its minimum requirements. Running with better GPUs leads to better performance.
@@ -11,57 +6,6 @@ BMInf (Big Model Inference) is a low-resource inference package for large-scale 
 - **Comprehensive Ability.**  BMInf supports generative model CPM1 [[1](#ref)], general language model CPM2.1 [[2](#ref)], and dialogue model EVA2 [[3](#ref)]. The abilities of these models cover text completion, text generation, and dialogue generation.
 - **Upgraded Model.** Based on CPM2 [[2](#ref)], the newly upgraded model CPM2.1 is currently supported. Based on continual learning, the text generation ability of CPM2.1 is greatly improved compared to CPM2.
 - **Convenient Deployment.** Using BMInf, it will be fast and convenient to develop interesting downstream applications.
-
-
-## Demo
-![demo](./docs/source/images/demo.gif)
-
-## Install
-
-- From pip: ``pip install bminf``
-
-- From source code: download the package and run ``python setup.py install``
-
-- From docker: ``docker run -it --gpus 1 -v $HOME/.cache/bigmodels:/root/.cache/bigmodels --rm openbmb/bminf:0.0.2 python3 examples/fill_blank.py``
-
-Here we list the minimum and recommended configurations for running BMInf. 
-
-| | Minimum Configuration | Recommended Configuration |
-|-|-|-|
-| Memory | 16GB | 24GB
-| GPU | NVIDIA GeForce GTX 1060 6GB | NVIDIA Tesla V100 16GB
-| PCI-E |  PCI-E 3.0 x16 |  PCI-E 3.0 x16
-
-## Quick Start
-
-Here we provide a simple script for using BMInf. 
-
-Firstly, import a model from the model base (e.g. CPM1, CPM2, EVA2).
-```python
-import bminf
-cpm2 = bminf.models.CPM2()
-```
-
-Then define the text and use the ``<span>`` token to denote the blank to fill in.
-```python
-text = "北京环球度假区相关负责人介绍，北京环球影城指定单日门票将采用<span>制度，即推出淡季日、平季日、旺季日和特定日门票。<span>价格为418元，<span>价格为528元，<span>价格为638元，<span>价格为<span>元。北京环球度假区将提供90天滚动价格日历，以方便游客提前规划行程。"
-```
-
-Use the ``generate`` function to obtain the results and replace ``<span>`` tokens with the results.
-
-```python
-for result in cpm2.generate(text, 
-    top_p=1.0,
-    top_n=10, 
-    temperature=0.9,
-    frequency_penalty=0,
-    presence_penalty=0
-):
-    value = result["text"]
-    text = text.replace("<span>", "\033[0;32m" + value + "\033[0m", 1)
-print(text)
-```
-Finally, you can get the predicted text. For more examples, go to the ``examples`` folder.
 
 ## Supported Models
 
@@ -84,8 +28,6 @@ Here we report the speeds of CPM2 encoder and decoder we have tested on differen
 | NVIDIA GeForce GTX 1060 | 533 | 1.6
 | NVIDIA GeForce GTX 1080Ti | 1200 | 12
 | NVIDIA GeForce GTX 2080Ti | 2275 | 19
-| NVIDIA Tesla V100 | - | 20
-| NVIDIA Tesla A100 | - | 26
 
 ## Contributing
 Links to the user community and [contributing guidelines](./CONTRIBUTING.md).
