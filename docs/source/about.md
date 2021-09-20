@@ -10,27 +10,23 @@ The goal of OpenBMB is to build the model base and toolkits for large-scale pre-
 
 Zhiyuan Liu
 
-### Members
+### Member
 
 <table>
     <tr>
-        <td ><center><img src="https://raw.githubusercontent.com/OpenBMB/inference/master/docs/images/demo.gif">Guoyang Zeng</center></td>
-        <td ><center><img src="https://raw.githubusercontent.com/OpenBMB/inference/master/docs/images/demo.gif">Jie Zhou</center></td>
-        <td ><center><img src="https://raw.githubusercontent.com/OpenBMB/inference/master/docs/images/demo.gif">Jun Zhang</center></td>
+        <td ><center><img src="https://raw.githubusercontent.com/jayzzhou-thu/inference/docs/docs/source/images/people/zgy.png" ><br/>Guoyang Zeng</center></td>
+        <td ><center><img src="https://raw.githubusercontent.com/jayzzhou-thu/inference/docs/docs/source/images/people/zj.jpeg" ><br/>Jie Zhou</center></td>
+        <td ><center><img src="https://raw.githubusercontent.com/jayzzhou-thu/inference/docs/docs/source/images/people/jc.jpeg"><br/>Chao Jia</center></td>
     </tr>
     <tr>
-        <td ><center><img src="https://raw.githubusercontent.com/OpenBMB/inference/master/docs/images/demo.gif" >Chao Jia</center></td>
-        <td ><center><img src="https://raw.githubusercontent.com/OpenBMB/inference/master/docs/images/demo.gif"  >Huadong Wang</center></td>
-        <td ><center><img src="https://raw.githubusercontent.com/OpenBMB/inference/master/docs/images/demo.gif"  >Xu Han</center></td>
+        <td ><center><img src="https://raw.githubusercontent.com/jayzzhou-thu/inference/docs/docs/source/images/people/hx.png"><br/>Huadong Wang</center></td>
+        <td ><center><img src="https://raw.githubusercontent.com/jayzzhou-thu/inference/docs/docs/source/images/people/hx.png"><br/>Xu Han</center></td>
+        <td ><center><img src="https://raw.githubusercontent.com/jayzzhou-thu/inference/docs/docs/source/images/people/dn.png"><br/>Ning Ding</center></td>
     </tr>
     <tr>
-        <td ><center><img src="https://raw.githubusercontent.com/OpenBMB/inference/master/docs/images/demo.gif" >Ning Ding</center></td>
-        <td ><center><img src="https://raw.githubusercontent.com/OpenBMB/inference/master/docs/images/demo.gif"  >Zhengyan Zhang</center></td>
-        <td ><center><img src="https://raw.githubusercontent.com/OpenBMB/inference/master/docs/images/demo.gif"  >Yujia Qin</center></td>
-    </tr>
-    <tr>
-        <td ><center><img src="https://raw.githubusercontent.com/OpenBMB/inference/master/docs/images/demo.gif" >Xiangrong Yin</center></td>
-        <td></td><td></td>
+        <td ><center><img src="https://raw.githubusercontent.com/jayzzhou-thu/inference/docs/docs/source/images/people/zzy.png"><br/>Zhengyan Zhang</center></td>
+        <td ><center><img src="https://raw.githubusercontent.com/jayzzhou-thu/inference/docs/docs/source/images/people/qyj.jpg"><br/>Yujia Qin</center></td>
+        <td ><center><img src="https://raw.githubusercontent.com/jayzzhou-thu/inference/docs/docs/source/images/people/yxr.png"><br/>Xiangrong Yin</center></td>
     </tr>
 </table>
 
