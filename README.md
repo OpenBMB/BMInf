@@ -70,6 +70,8 @@ Here we report the speeds of CPM2 encoder and decoder we have tested on differen
 | NVIDIA GeForce GTX 1060 | 533 | 1.6
 | NVIDIA GeForce GTX 1080Ti | 1200 | 12
 | NVIDIA GeForce GTX 2080Ti | 2275 | 19
+| NVIDIA Tesla V100 | - | 20
+| NVIDIA Tesla A100 | - | 26
 
 ## Contributing
 Links to the user community and [contributing guidelines](./CONTRIBUTING.md).
