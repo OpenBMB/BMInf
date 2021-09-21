@@ -6,9 +6,11 @@ The goal of OpenBMB is to build the model base and toolkits for large-scale pre-
 ## Our Team
 
 ### Manager
-![](images/people/lzy.png)
-
-Zhiyuan Liu
+<table>
+    <tr>
+        <td ><center><img src="https://raw.githubusercontent.com/jayzzhou-thu/inference/docs/docs/source/images/people/lzy.png" ><br/>Zhiyuan Liu</center></td>
+    </tr>
+</table>
 
 ### Member
 
