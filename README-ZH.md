@@ -68,6 +68,10 @@ print(text)
 | NVIDIA GeForce GTX 1060 | 533 | 1.6
 | NVIDIA GeForce GTX 1080Ti | 1200 | 12
 | NVIDIA GeForce GTX 2080Ti | 2275 | 19
+| NVIDIA Tesla V100 | 2275 | 20
+| NVIDIA Tesla A100 | 2275 | 26
+
+
 
 ## 参与贡献
 请参考开源社区链接和[贡献指南](./CONTRIBUTING.md)。
