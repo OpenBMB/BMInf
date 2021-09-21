@@ -15,16 +15,15 @@ Zhiyuan Liu
 <table>
     <tr>
         <td ><center><img src="https://raw.githubusercontent.com/jayzzhou-thu/inference/docs/docs/source/images/people/zgy.png" ><br/>Guoyang Zeng</center></td>
-        <td ><center><img src="https://raw.githubusercontent.com/jayzzhou-thu/inference/docs/docs/source/images/people/zj.jpeg" ><br/>Jie Zhou</center></td>
         <td ><center><img src="https://raw.githubusercontent.com/jayzzhou-thu/inference/docs/docs/source/images/people/jc.jpeg"><br/>Chao Jia</center></td>
+        <td ><center><img src="https://raw.githubusercontent.com/jayzzhou-thu/inference/docs/docs/source/images/people/whd.jpeg"><br/>Huadong Wang</center></td>
     </tr>
     <tr>
-        <td ><center><img src="https://raw.githubusercontent.com/jayzzhou-thu/inference/docs/docs/source/images/people/whd.jpeg"><br/>Huadong Wang</center></td>
         <td ><center><img src="https://raw.githubusercontent.com/jayzzhou-thu/inference/docs/docs/source/images/people/hx.png"><br/>Xu Han</center></td>
         <td ><center><img src="https://raw.githubusercontent.com/jayzzhou-thu/inference/docs/docs/source/images/people/dn.png"><br/>Ning Ding</center></td>
+        <td ><center><img src="https://raw.githubusercontent.com/jayzzhou-thu/inference/docs/docs/source/images/people/zzy.png"><br/>Zhengyan Zhang</center></td>
     </tr>
     <tr>
-        <td ><center><img src="https://raw.githubusercontent.com/jayzzhou-thu/inference/docs/docs/source/images/people/zzy.png"><br/>Zhengyan Zhang</center></td>
         <td ><center><img src="https://raw.githubusercontent.com/jayzzhou-thu/inference/docs/docs/source/images/people/qyj.jpg"><br/>Yujia Qin</center></td>
         <td ><center><img src="https://raw.githubusercontent.com/jayzzhou-thu/inference/docs/docs/source/images/people/yxr.png"><br/>Xiangrong Yin</center></td>
     </tr>
