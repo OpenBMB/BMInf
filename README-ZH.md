@@ -1,12 +1,13 @@
-# BMInf
-
-[English] | 简体中文
-
-[English]: ./README.md
+<h1 align="center">BMInf</h1>
+<p align="center">
+  <a href="https://bminf.readthedocs.io/" target="_blank">文档</a> • <a href="#features">特性</a> • <a href="#install">安装</a> • <a href="#quick-start">快速上手</a> • <a href="#supported-models">支持模型</a> • <a href="https://github.com/OpenBMB/inference/blob/master/README.md" target="_blank">English</a>
+<br>
+</p>
 
 BMInf (Big Model Inference) 是一个用于大规模预训练语言模型（pretrained language models, PLM）推理阶段的低资源工具包。
+<div id="features"></div>
 
-- **硬件友好** BMInf最低支持在NVIDIA GTX 1060单卡运行百亿大模型。在此基础上，使用更好的gpu运行会有更好的性能。
+- **硬件友好** BMInf最低支持在NVIDIA GTX 1060单卡运行百亿大模型。在此基础上，使用更好的gpu运行会有更好的性能。在显存支持进行大模型推理的情况下（如V100或A100显卡），BMInf的实现较现有PyTorch版本仍有较大性能提升。
 - **开源共享** 模型参数开源共享，用户在本地即可部署运行，无需访问或申请API。
 - **能力全面** 支持生成模型CPM1 [[1](#ref)]、通用模型CPM2 [[2](#ref)]、对话模型EVA2 [[3](#ref)]，模型能力覆盖文本补全、文本生成与对话场景。
 - **模型升级** 基于持续学习推出百亿模型新升级CPM2.1 [[2](#ref)]，文本生成能力大幅提高。
@@ -15,7 +16,10 @@ BMInf (Big Model Inference) 是一个用于大规模预训练语言模型（pret
 ## Demo
 ![demo](./docs/source/images/demo.gif)
 
-## 安装
+## 文档
+我们的[文档](https://bminf.readthedocs.io/)提供了关于该工具包的更多信息。
+
+## [安装](#install)
 - 用pip安装：``pip install bminf``
 
 - 从源代码安装: 下载工具包并在目录中运行 ``python setup.py install``
@@ -30,7 +34,7 @@ BMInf (Big Model Inference) 是一个用于大规模预训练语言模型（pret
 | GPU | NVIDIA GeForce GTX 1060 6GB | NVIDIA Tesla V100 16GB
 | PCI-E |  PCI-E 3.0 x16 |  PCI-E 3.0 x16
 
-## 快速上手
+## [快速上手](#quick-start)
 
 这里我们给出了一个使用BMInf的简单脚本。
 
@@ -61,7 +65,7 @@ print(text)
 ```
 最终我们就得到了预测文本。更多的使用脚本详见``examples``文件夹。
 
-## 支持模型
+## [支持模型](#supported-models)
 
 BMInf目前支持下列模型：
 
@@ -75,22 +79,24 @@ BMInf目前支持下列模型：
 
 下表汇报了我们在不同平台上运行CPM2编码器和解码器的速度。用户可以在本机运行``benchmark/cpm2/encoder.py``和``benchmark/cpm2/decoder.py``来测试本机运行速度。
 
-| GPU | 编码速度 (tokens/s) | 解码速度 (tokens/s) |
-|-|-|-|
-| NVIDIA GeForce GTX 1060 | 533 | 1.6
-| NVIDIA GeForce GTX 1080Ti | 1200 | 12
-| NVIDIA GeForce GTX 2080Ti | 2275 | 19
-| NVIDIA Tesla V100 | 2275 | 20
-| NVIDIA Tesla A100 | 2275 | 26
-
-
+实现 | GPU | 编码速度 (tokens/s) | 解码速度 (tokens/s) |
+|-|-|-|-|
+BMInf | NVIDIA GeForce GTX 1060 | 533 | 1.6
+BMInf | NVIDIA GeForce GTX 1080Ti | 1200 | 12
+BMInf | NVIDIA GeForce GTX 2080Ti | 2275 | 19
+BMInf | NVIDIA Tesla V100 | 2275 | 20
+BMInf | NVIDIA Tesla A100 | 2275 | 26
+PyTorch | NVIDIA Tesla V100 | - | 3
+PyTorch | NVIDIA Tesla V100 | - | 7
 
 ## 参与贡献
-请参考开源社区链接和[贡献指南](./CONTRIBUTING.md)。
+我们提供了微信的开源社区二维码并且欢迎贡献者参照我们的[贡献指南](https://github.com/OpenBMB/inference/blob/master/CONTRIBUTING.md)贡献相关代码。
+
+![Our community](./docs/source/images/community.jpeg)
 
 ## 开源许可
 
-该工具包使用[Apache 2.0](./LICENSE)开源许可证。
+该工具包使用[Apache 2.0](https://github.com/OpenBMB/inference/blob/master/LICENSE)开源许可证。
 
 ## 参考文献
 <div id="ref"></div>
