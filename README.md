@@ -20,8 +20,9 @@ BMInf (Big Model Inference) is a low-resource inference package for large-scale 
 ## Documentation
 Our [documentation](https://bminf.readthedocs.io/) provides more information about the package.
 
-## Install
 <div id="install"></div>
+
+## Install
 
 - From pip: ``pip install bminf``
 
@@ -37,8 +38,9 @@ Here we list the minimum and recommended configurations for running BMInf.
 | GPU | NVIDIA GeForce GTX 1060 6GB | NVIDIA Tesla V100 16GB
 | PCI-E |  PCI-E 3.0 x16 |  PCI-E 3.0 x16
 
-## Quick Start
 <div id="quick-start"></div>
+
+## Quick Start
 
 Here we provide a simple script for using BMInf. 
 
@@ -69,8 +71,9 @@ print(text)
 ```
 Finally, you can get the predicted text. For more examples, go to the ``examples`` folder.
 
-## Supported Models
 <div id="supported-models"></div>
+
+## Supported Models
 
 BMInf currently supports these models:
 

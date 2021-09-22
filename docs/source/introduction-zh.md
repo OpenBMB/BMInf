@@ -1,8 +1,4 @@
-<h1 align="center">BMInf</h1>
-<p align="center">
-  <a href="https://bminf.readthedocs.io/" target="_blank">文档</a> • <a href="#features">特性</a> • <a href="#install">安装</a> • <a href="#quick-start">快速上手</a> • <a href="#supported-models">支持模型</a> • <a href="./README.md" target="_blank">English</a>
-<br>
-</p>
+# 简介
 
 BMInf (Big Model Inference) 是一个用于大规模预训练语言模型（pretrained language models, PLM）推理阶段的低资源工具包。
 <div id="features"></div>
@@ -12,65 +8,6 @@ BMInf (Big Model Inference) 是一个用于大规模预训练语言模型（pret
 - **能力全面** 支持生成模型CPM1 [[1](#ref)]、通用模型CPM2 [[2](#ref)]、对话模型EVA2 [[3](#ref)]，模型能力覆盖文本补全、文本生成与对话场景。
 - **模型升级** 基于持续学习推出百亿模型新升级CPM2.1 [[2](#ref)]，文本生成能力大幅提高。
 - **应用便捷** 基于工具包可以快速开发大模型相关下游应用。
-
-## Demo
-![demo](./docs/source/images/demo.gif)
-
-## 文档
-我们的[文档](https://bminf.readthedocs.io/)提供了关于该工具包的更多信息。
-
-<div id="install"></div>
-
-## 安装
-
-- 用pip安装：``pip install bminf``
-
-- 从源代码安装: 下载工具包并在目录中运行 ``python setup.py install``
-
-- 从Docker安装: ``docker run -it --gpus 1 -v $HOME/.cache/bigmodels:/root/.cache/bigmodels --rm openbmb/bminf:0.0.2 python3 examples/fill_blank.py``
-
-运行BMInf的最低配置与推荐配置：
-
-| | 最低配置 | 推荐配置 |
-|-|-|-|
-| 内存 | 16GB | 24GB
-| GPU | NVIDIA GeForce GTX 1060 6GB | NVIDIA Tesla V100 16GB
-| PCI-E |  PCI-E 3.0 x16 |  PCI-E 3.0 x16
-
-<div id="quick-start"></div>
-
-## 快速上手
-
-这里我们给出了一个使用BMInf的简单脚本。
-
-首先，从模型库中导入一个想要使用的模型（如CPM1，CPM2或EVA2）。
-```python
-import bminf
-cpm2 = bminf.models.CPM2()
-```
-
-定义输入文本，使用``<span>``标签来表示需要填入文本的位置。
-```python
-text = "北京环球度假区相关负责人介绍，北京环球影城指定单日门票将采用<span>制度，即推出淡季日、平季日、旺季日和特定日门票。<span>价格为418元，<span>价格为528元，<span>价格为638元，<span>价格为<span>元。北京环球度假区将提供90天滚动价格日历，以方便游客提前规划行程。"
-```
-
-使用``generate``函数获取结果，将文本中的``<span>``标签替换为得到的结果。
-
-```python
-for result in cpm2.generate(text, 
-    top_p=1.0,
-    top_n=10, 
-    temperature=0.9,
-    frequency_penalty=0,
-    presence_penalty=0
-):
-    value = result["text"]
-    text = text.replace("<span>", "\033[0;32m" + value + "\033[0m", 1)
-print(text)
-```
-最终我们就得到了预测文本。更多的使用脚本详见``examples``文件夹。
-
-<div id="supported-models"></div>
 
 ## 支持模型
 
@@ -99,7 +36,7 @@ PyTorch | NVIDIA Tesla V100 | - | 7
 ## 参与贡献
 我们提供了微信的开源社区二维码并且欢迎贡献者参照我们的[贡献指南](https://github.com/OpenBMB/inference/blob/master/CONTRIBUTING.md)贡献相关代码。
 
-![Our community](./docs/source/images/community.jpeg)
+![Our community](./images/community.jpeg)
 
 ## 开源许可
 
