@@ -1,6 +1,6 @@
 <h1 align="center">BMInf</h1>
 <p align="center">
-  <a href="https://bminf.readthedocs.io/" target="_blank">Documentation</a> • <a href="#features">Features</a> • <a href="#install">Installation</a> • <a href="#quick-start">Quick Start</a> • <a href="#supported-models">Supported Models</a> • <a href="https://github.com/OpenBMB/inference/blob/master/README-ZH.md" target="_blank">简体中文</a>
+  <a href="https://bminf.readthedocs.io/" target="_blank">Documentation</a> • <a href="#features">Features</a> • <a href="#install">Installation</a> • <a href="#quick-start">Quick Start</a> • <a href="#supported-models">Supported Models</a> • <a href="./README-ZH.md" target="_blank">简体中文</a>
 <br>
 </p>
 
@@ -20,7 +20,8 @@ BMInf (Big Model Inference) is a low-resource inference package for large-scale 
 ## Documentation
 Our [documentation](https://bminf.readthedocs.io/) provides more information about the package.
 
-## [Install](#install)
+## Install
+<div id="install"></div>
 
 - From pip: ``pip install bminf``
 
@@ -36,7 +37,8 @@ Here we list the minimum and recommended configurations for running BMInf.
 | GPU | NVIDIA GeForce GTX 1060 6GB | NVIDIA Tesla V100 16GB
 | PCI-E |  PCI-E 3.0 x16 |  PCI-E 3.0 x16
 
-## [Quick Start](#quick-start)
+## Quick Start
+<div id="quick-start"></div>
 
 Here we provide a simple script for using BMInf. 
 
@@ -67,7 +69,8 @@ print(text)
 ```
 Finally, you can get the predicted text. For more examples, go to the ``examples`` folder.
 
-## [Supported Models](#supported-models)
+## Supported Models
+<div id="supported-models"></div>
 
 BMInf currently supports these models:
 
