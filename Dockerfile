@@ -8,3 +8,4 @@ RUN pip3 install setuptools
 ARG version
 RUN pip3 install bminf==$version
 ADD examples examples
+ADD benchmark benchmark
