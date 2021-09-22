@@ -1,12 +1,13 @@
-# BMInf
-
-English | [简体中文]
-
-[简体中文]: ./README-ZH.md
+<h1 align="center">BMInf</h1>
+<p align="center">
+  <a href="https://bminf.readthedocs.io/" target="_blank">Documentation</a> • <a href="#features">Features</a> • <a href="#install">Installation</a> • <a href="#quick-start">Quick Start</a> • <a href="#supported-models">Supported Models</a> • <a href="https://github.com/OpenBMB/inference/blob/master/README-ZH.md" target="_blank">简体中文</a>
+<br>
+</p>
 
 BMInf (Big Model Inference) is a low-resource inference package for large-scale pretrained language models (PLMs). It has following features:
+<div id="features"></div>
 
-- **Hardware Friendly.** BMInf supports running models with more than 10 billion parameters on a single NVIDIA GTX 1060 GPU in its minimum requirements. Running with better GPUs leads to better performance.
+- **Hardware Friendly.** BMInf supports running models with more than 10 billion parameters on a single NVIDIA GTX 1060 GPU in its minimum requirements. Running with better GPUs leads to better performance. In cases where the GPU memory supports the large model inference (such as V100 or A100), BMInf still has a significant performance improvement over the existing PyTorch implementation.
 - **Open.** The parameters of models are open. Users can access large models locally with their own machines without applying or accessing an online API.  
 - **Comprehensive Ability.**  BMInf supports generative model CPM1 [[1](#ref)], general language model CPM2.1 [[2](#ref)], and dialogue model EVA2 [[3](#ref)]. The abilities of these models cover text completion, text generation, and dialogue generation.
 - **Upgraded Model.** Based on CPM2 [[2](#ref)], the newly upgraded model CPM2.1 is currently supported. Based on continual learning, the text generation ability of CPM2.1 is greatly improved compared to CPM2.
@@ -16,7 +17,10 @@ BMInf (Big Model Inference) is a low-resource inference package for large-scale 
 ## Demo
 ![demo](./docs/source/images/demo.gif)
 
-## Install
+## Documentation
+Our [documentation](https://bminf.readthedocs.io/) provides more information about the package.
+
+## [Install](#install)
 
 - From pip: ``pip install bminf``
 
@@ -32,7 +36,7 @@ Here we list the minimum and recommended configurations for running BMInf.
 | GPU | NVIDIA GeForce GTX 1060 6GB | NVIDIA Tesla V100 16GB
 | PCI-E |  PCI-E 3.0 x16 |  PCI-E 3.0 x16
 
-## Quick Start
+## [Quick Start](#quick-start)
 
 Here we provide a simple script for using BMInf. 
 
@@ -63,7 +67,7 @@ print(text)
 ```
 Finally, you can get the predicted text. For more examples, go to the ``examples`` folder.
 
-## Supported Models
+## [Supported Models](#supported-models)
 
 BMInf currently supports these models:
 
@@ -79,18 +83,24 @@ Besides these models, we are now working on adding more PLMs especially large-sc
 
 Here we report the speeds of CPM2 encoder and decoder we have tested on different platforms. You can also run ``benchmark/cpm2/encoder.py`` and ``benchmark/cpm2/decoder.py`` to test the speed on your machine!
 
-| GPU | Encoder Speed (tokens/s) | Decoder Speed (tokens/s) |
-|-|-|-|
-| NVIDIA GeForce GTX 1060 | 533 | 1.6
-| NVIDIA GeForce GTX 1080Ti | 1200 | 12
-| NVIDIA GeForce GTX 2080Ti | 2275 | 19
+Implementation | GPU | Encoder Speed (tokens/s) | Decoder Speed (tokens/s) |
+|-|-|-|-|
+BMInf | NVIDIA GeForce GTX 1060 | 533 | 1.6
+BMInf | NVIDIA GeForce GTX 1080Ti | 1200 | 12
+BMInf | NVIDIA GeForce GTX 2080Ti | 2275 | 19
+BMInf | NVIDIA Tesla V100 | 2275 | 20
+BMInf | NVIDIA Tesla A100 | 2275 | 26
+PyTorch | NVIDIA Tesla V100 | - | 3
+PyTorch | NVIDIA Tesla V100 | - | 7
 
 ## Contributing
-Links to the user community and [contributing guidelines](./CONTRIBUTING.md).
+Here is the QRCode to our WeChat user community and we welcome others to contribute codes following our [contributing guidelines](https://github.com/OpenBMB/inference/blob/master/CONTRIBUTING.md).
+
+![Our community](./docs/source/images/community.jpeg)
 
 ## License
 
-The package is released under the [Apache 2.0](./LICENSE) License.
+The package is released under the [Apache 2.0](https://github.com/OpenBMB/inference/blob/master/LICENSE) License.
 
 ## References
 <div id="ref"></div>
