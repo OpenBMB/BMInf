@@ -1,6 +1,6 @@
 <h1 align="center">BMInf</h1>
 <p align="center">
-  <a href="https://bminf.readthedocs.io/" target="_blank">文档</a> • <a href="#features">特性</a> • <a href="#install">安装</a> • <a href="#quick-start">快速上手</a> • <a href="#supported-models">支持模型</a> • <a href="https://github.com/OpenBMB/inference/blob/master/README.md" target="_blank">English</a>
+  <a href="https://bminf.readthedocs.io/" target="_blank">文档</a> • <a href="#features">特性</a> • <a href="#install">安装</a> • <a href="#quick-start">快速上手</a> • <a href="#supported-models">支持模型</a> • <a href="./README.md" target="_blank">English</a>
 <br>
 </p>
 
@@ -19,7 +19,9 @@ BMInf (Big Model Inference) 是一个用于大规模预训练语言模型（pret
 ## 文档
 我们的[文档](https://bminf.readthedocs.io/)提供了关于该工具包的更多信息。
 
-## [安装](#install)
+## 安装
+<div id="install"></div>
+
 - 用pip安装：``pip install bminf``
 
 - 从源代码安装: 下载工具包并在目录中运行 ``python setup.py install``
@@ -34,7 +36,8 @@ BMInf (Big Model Inference) 是一个用于大规模预训练语言模型（pret
 | GPU | NVIDIA GeForce GTX 1060 6GB | NVIDIA Tesla V100 16GB
 | PCI-E |  PCI-E 3.0 x16 |  PCI-E 3.0 x16
 
-## [快速上手](#quick-start)
+## 快速上手
+<div id="quick-start"></div>
 
 这里我们给出了一个使用BMInf的简单脚本。
 
@@ -65,7 +68,8 @@ print(text)
 ```
 最终我们就得到了预测文本。更多的使用脚本详见``examples``文件夹。
 
-## [支持模型](#supported-models)
+## 支持模型
+<div id="supported-models"></div>
 
 BMInf目前支持下列模型：
 
