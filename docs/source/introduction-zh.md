@@ -28,8 +28,8 @@ BMInf目前支持下列模型：
 BMInf | NVIDIA GeForce GTX 1060 | 533 | 1.6
 BMInf | NVIDIA GeForce GTX 1080Ti | 1200 | 12
 BMInf | NVIDIA GeForce GTX 2080Ti | 2275 | 19
-BMInf | NVIDIA Tesla V100 | - | 20
-BMInf | NVIDIA Tesla A100 | - | 26
+BMInf | NVIDIA Tesla V100 | 2966 | 20
+BMInf | NVIDIA Tesla A100 | 4365 | 26
 PyTorch | NVIDIA Tesla V100 | - | 3
 PyTorch | NVIDIA Tesla V100 | - | 7
 

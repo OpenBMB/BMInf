@@ -28,7 +28,7 @@ Our [documentation](https://bminf.readthedocs.io/) provides more information abo
 
 - From source code: download the package and run ``python setup.py install``
 
-- From docker: ``docker run -it --gpus 1 -v $HOME/.cache/bigmodels:/root/.cache/bigmodels --rm openbmb/bminf:0.0.2 python3 examples/fill_blank.py``
+- From docker: ``docker run -it --gpus 1 -v $HOME/.cache/bigmodels:/root/.cache/bigmodels --rm openbmb/bminf python3 examples/fill_blank.py``
 
 Here we list the minimum and recommended configurations for running BMInf. 
 
@@ -94,8 +94,8 @@ Implementation | GPU | Encoder Speed (tokens/s) | Decoder Speed (tokens/s) |
 BMInf | NVIDIA GeForce GTX 1060 | 533 | 1.6
 BMInf | NVIDIA GeForce GTX 1080Ti | 1200 | 12
 BMInf | NVIDIA GeForce GTX 2080Ti | 2275 | 19
-BMInf | NVIDIA Tesla V100 | - | 20
-BMInf | NVIDIA Tesla A100 | - | 26
+BMInf | NVIDIA Tesla V100 | 2966 | 20
+BMInf | NVIDIA Tesla A100 | 4365 | 26
 PyTorch | NVIDIA Tesla V100 | - | 3
 PyTorch | NVIDIA Tesla V100 | - | 7
 
