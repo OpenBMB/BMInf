@@ -1,8 +1,8 @@
-# Contributing to BMInference
+# Contributing to BMInf
 
 We welcome everyone's effort to make the community and the package better. You are welcomed to propose an issue, make a pull request or help others in the community. All of the efforts are appreciated!
 
-There are many ways that you can contribute to BMInference:
+There are many ways that you can contribute to BMInf:
 
 - ✉️ Submitting an issue.
 - ⌨️ Making a pull request.
@@ -23,9 +23,9 @@ You can also write codes to contribute. The codes may include a bug fix, a new e
 
 2. **Fork the repository.** Fork the repository to your own GitHub space by clicking the "Fork" button. Then clone it on your disk and set the remote repo:
 ```git
-$ git clone https://github.com/<your GitHub>/inference.git
-$ cd inference
-$ git remote add upstream https://github.com/OpenBMB/inference.git
+$ git clone https://github.com/<your GitHub>/BMInf.git
+$ cd BMInf
+$ git remote add upstream https://github.com/OpenBMB/BMInf.git
 ```
 
 3. **Write your code.** Change to a new branch to work on your modifications. 

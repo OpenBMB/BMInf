@@ -7,8 +7,8 @@ pip install bminf
 
 ## From Source
 ```
-git clone https://github.com/OpenBMB/inference.git
-cd inference
+git clone https://github.com/OpenBMB/BMInf.git
+cd BMInf
 python setup.py install
 ```
 
