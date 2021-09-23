@@ -12,10 +12,10 @@ CPM-2
 ======================
 
 .. autoclass:: bminf.models.CPM2
-    :members: __init__, generate
+    :members: __init__, generate, fill_blank
 
-EVA-2
+EVA
 ======================
 
-.. autoclass:: bminf.models.EVA2
+.. autoclass:: bminf.models.EVA
     :members: __init__, dialogue

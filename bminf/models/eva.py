@@ -8,8 +8,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-class EVA2Configuration(T5Configuration):
-    MODEL_NAME = "eva2"
+class EVAConfiguration(T5Configuration):
+    MODEL_NAME = "eva-int8"
     DIM_MODEL = 2048
     DIM_FF = 5120
     DIM_KV = 64
@@ -21,8 +21,8 @@ class EVA2Configuration(T5Configuration):
     VOCAB_SIZE = 30000
     MAX_DECODER_LENGTH = 256
 
-class EVA2(T5):
-    def __init__(self, device : Union[None, int, cupy.cuda.Device] = None, memory_limit : Optional[int] = None, config : Optional[EVA2Configuration] = None):
+class EVA(T5):
+    def __init__(self, device : Union[None, int, cupy.cuda.Device] = None, memory_limit : Optional[int] = None, config : Optional[EVAConfiguration] = None):
         """Model EVA: An Open-Domain Chinese Dialogue System with Large-Scale Generative Pre-Training
         
         `[Repo] <https://github.com/thu-coai/EVA/>`__
@@ -31,10 +31,10 @@ class EVA2(T5):
         Args:
             device: Index of CUDA device or ``None``.
             memory_limit: Total memory limit for this model in bytes.
-            config: An EVA2 configuration object.
+            config: An EVA configuration object.
         """
         if config is None:
-            config = EVA2Configuration()
+            config = EVAConfiguration()
 
         if config.DEVICE is None:
             if device is None:

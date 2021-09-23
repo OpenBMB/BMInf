@@ -1,4 +1,4 @@
-from bminf.models.eva2 import EVA2Configuration, EVA2
+from bminf.models.eva import EVAConfiguration, EVA
 import torch
 import numpy as np
 from bminf.parameter import Parameter
@@ -55,15 +55,15 @@ def build_block(ckpt, model : TransformerBlockDecoder, prefix, has_cross_attn):
     scale_build_parameter(f"{prefix}.ff.dense_relu_dense.wi_1.weight", model.dense_gelu_dense.wi_1.weight, model.dense_gelu_dense.wi_1.weight_scale, 1, ckpt)
     scale_build_parameter(f"{prefix}.ff.dense_relu_dense.wo.weight", model.dense_gelu_dense.wo.weight, model.dense_gelu_dense.wo.weight_scale, 1, ckpt)
 
-def build_encoder(ckpt, model : EVA2):
+def build_encoder(ckpt, model : EVA):
     for i in range(24):
         build_block(ckpt, model.encoder[i], f"encoder.blocks.{i}", False)
 
-def build_decoder(ckpt, model : EVA2):
+def build_decoder(ckpt, model : EVA):
     for i in range(24):
         build_block(ckpt, model.decoder[i], f"decoder.blocks.{i}", True) 
 
-def build_model(ckpt, model : EVA2):
+def build_model(ckpt, model : EVA):
     build_parameter("word_embeds.weight", model.input_embedding.weight, ckpt) 
     build_parameter("encoder.blocks.0.self_attn.self_attn.relative_attention_bias.weight", model.encoder_position_bias.embedding.weight, ckpt)
     build_parameter("encoder.final_layernorm.weight", model.encoder_final_layer_nrom.weight, ckpt)
@@ -83,11 +83,11 @@ def build_model(ckpt, model : EVA2):
     
 def main():
     model = torch.load("merge.pt")
-    config = EVA2Configuration()
+    config = EVAConfiguration()
     config.MODEL_NAME = None
-    eva2 = EVA2(config=config)
-    build_model(model, eva2)
-    eva2.dump(open("checkpoint.pt", "wb"))
+    eva = EVA(config=config)
+    build_model(model, eva)
+    eva.dump(open("checkpoint.pt", "wb"))
 
 if __name__ == "__main__":
     main()

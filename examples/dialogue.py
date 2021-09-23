@@ -2,15 +2,18 @@ import bminf
 
 def main():
     print("Loading model")
-    eva2 = bminf.models.EVA2()
+    eva = bminf.models.EVA()
     
     context = []
     while True:
         you = input("你：")
         context.append(you)
-        computer = eva2.dialogue(context)
+        if you == "你好":
+            computer = "你好，我是EVA"
+        else:
+            computer = eva.dialogue(context)
         context.append(computer)
-        print("EVA2：", computer)
+        print("EVA：", computer)
 
 if __name__ == "__main__":
     main()
