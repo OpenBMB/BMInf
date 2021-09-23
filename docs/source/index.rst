@@ -25,4 +25,4 @@ BMInf (Big Model Inference) 是一个用于大规模预训练语言模型（pret
    :maxdepth: 2
    :caption: API Reference
 
-   .. api/index
+   Models <api/models>
