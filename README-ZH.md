@@ -54,10 +54,10 @@ cpm2 = bminf.models.CPM2()
 text = "北京环球度假区相关负责人介绍，北京环球影城指定单日门票将采用<span>制度，即推出淡季日、平季日、旺季日和特定日门票。<span>价格为418元，<span>价格为528元，<span>价格为638元，<span>价格为<span>元。北京环球度假区将提供90天滚动价格日历，以方便游客提前规划行程。"
 ```
 
-使用``generate``函数获取结果，将文本中的``<span>``标签替换为得到的结果。
+使用``fill_blank``函数获取结果，将文本中的``<span>``标签替换为得到的结果。
 
 ```python
-for result in cpm2.generate(text, 
+for result in cpm2.fill_blank(text, 
     top_p=1.0,
     top_n=10, 
     temperature=0.9,
