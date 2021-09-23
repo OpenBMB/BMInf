@@ -13,6 +13,8 @@ class GenerateSampler:
             temperature : float = 1,
             frequency_penalty : List[float] = 0.1,
             presence_penalty : List[float] = 0.1,
+            no_penalty_tokens : List[int] = [],
+            filter_tokens : List[int] = [],
         ):
         self.max_length = max_length
         self.temperature = cupy.float16(temperature)
@@ -22,6 +24,8 @@ class GenerateSampler:
         self.device = device
         self.top_n = top_n
         self.top_p = top_p
+        self.filter_tokens = filter_tokens
+        self.no_penalty_tokens = set(no_penalty_tokens)
 
         if self.top_n is not None:
             if self.top_n > vocab_size:
@@ -37,7 +41,8 @@ class GenerateSampler:
         with device:
             self.frequency_count = cupy.zeros((vocab_size,), dtype=cupy.int32)
             for token in prompt_text:
-                self.frequency_count[token] += 1
+                if token not in self.no_penalty_tokens:
+                    self.frequency_count[token] += 1
 
     def sample(self, logits : cupy.ndarray) -> int:
         assert logits.shape == (self.vocab_size,)
@@ -52,6 +57,9 @@ class GenerateSampler:
             logits /= logits.sum()
             cpu_probs = cupy.asnumpy(logits).astype(np.float32)
 
+        for it in self.filter_tokens:
+            cpu_probs[it] = 0
+            
         idx = cpu_probs.argsort()
         cpu_probs.sort()
 
@@ -73,7 +81,9 @@ class GenerateSampler:
         
         cpu_probs /= cpu_probs.sum()
         ret = idx[np.random.choice(cpu_probs.shape[0], p=cpu_probs)].item()
-        with self.device:
-            self.frequency_count[ret] += 1
+        if ret not in self.no_penalty_tokens:
+            with self.device:
+                self.frequency_count[ret] += 1
+        
         return ret
 
