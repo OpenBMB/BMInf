@@ -48,15 +48,16 @@ class CPM2(T5):
 
         super().__init__(config)
 
-    def generate(self, 
-            input_sentence : str,
-            spans_position : Optional[List[int]] = None,
-            max_tokens : int = 128,
-            top_n : Optional[int] = None,
-            top_p : Optional[float] = None,
-            temperature : float = 0.9,
-            frequency_penalty : float = 0,
-            presence_penalty : float = 0,
+    def pre_processing(self,
+                input_sentence : str,
+                spans_position : Optional[List[int]] = None,
+                max_tokens : int = 128,
+                top_n : Optional[int] = None,
+                top_p : Optional[float] = None,
+                temperature : float = 0.9,
+                frequency_penalty : float = 0,
+                presence_penalty : float = 0,
+                start_span_idx : int = 0,
         ):
         if spans_position is None:
             spans_position = []
@@ -76,7 +77,7 @@ class CPM2(T5):
                 raise ValueError("Wrong span token at position %d" % pos)
         
         idx = []
-        span_idx = 0
+        span_idx = start_span_idx
         last_pos = 0
         for pos in spans_position:
             idx += self.text_to_id(input_sentence[last_pos: pos])
@@ -90,7 +91,6 @@ class CPM2(T5):
         ctx = self.encode(np.array([idx], dtype=np.int64), [input_length])
         self.init_decoder_context(ctx)
         
-        decoder_ipts = self.tokenizer.sod_id
         sampler = GenerateSampler(
             idx, 
             self.tokenizer.vocab_size,
@@ -103,10 +103,34 @@ class CPM2(T5):
             presence_penalty
         )
 
-        blanks = []
-        next_span = 0
+        return ctx, sampler, spans_position
+
+
+    def fill_blank(self, 
+            input_sentence : str,
+            spans_position : Optional[List[int]] = None,
+            max_tokens : int = 128,
+            top_n : Optional[int] = None,
+            top_p : Optional[float] = None,
+            temperature : float = 0.9,
+            frequency_penalty : float = 0,
+            presence_penalty : float = 0,
+        ):
+        # Input: ... <s_0> ... <s_1> ... <s_2> ...
+        # Output: <s> <s_0> ... <s_1> ... <s_2> ...
+
+        ctx, sampler, spans_position = self.pre_processing(input_sentence, spans_position,
+                                           max_tokens, top_n, top_p, temperature,
+                                           frequency_penalty, presence_penalty, 0)
+
+        logits = self.decode_step(ctx, [self.tokenizer.sod_id])[0]
+        decoder_ipts = self.tokenizer.get_span(0)
+        blanks = [[]]
+        next_span = 1
 
         for _ in range(max_tokens):
+            if decoder_ipts in [7,24,17,47,16,12,18,13,19,9,42,53,51,27,2154,2891,2154,6027]:
+                break
             logits = self.decode_step(ctx, [decoder_ipts])[0]
             decoder_ipts = sampler.sample(logits)
             if decoder_ipts == self.tokenizer.get_span(next_span):
@@ -117,6 +141,43 @@ class CPM2(T5):
             else:
                 blanks[-1].append(decoder_ipts)
         
+        return [
+            {
+                "position": blank_pos,
+                "text": self.id_to_text(blank_tokens)
+            } 
+            for blank_pos, blank_tokens in zip( spans_position, blanks )
+        ]
+
+
+    def generate(self, 
+            input_sentence : str,
+            spans_position : Optional[List[int]] = None,
+            max_tokens : int = 128,
+            top_n : Optional[int] = None,
+            top_p : Optional[float] = None,
+            temperature : float = 0.9,
+            frequency_penalty : float = 0,
+            presence_penalty : float = 0,
+        ):
+        # Input: ... <s_189>
+        # Output: <s> <s_189> ...
+        ctx, sampler, spans_position = self.pre_processing(input_sentence, spans_position,
+                                           max_tokens, top_n, top_p, temperature,
+                                           frequency_penalty, presence_penalty, 189)
+
+
+        logits = self.decode_step(ctx, [self.tokenizer.sod_id])[0]
+        decoder_ipts = self.tokenizer.get_span(189)
+        blanks = [[]]
+
+        for _ in range(max_tokens):
+            if decoder_ipts in [7,24,17,47,16,12,18,13,19,9,42,53,51,27,2154,2891,2154,6027]:
+                break
+            logits = self.decode_step(ctx, [decoder_ipts])[0]
+            decoder_ipts = sampler.sample(logits)
+            blanks[-1].append(decoder_ipts)
+
         return [
             {
                 "position": blank_pos,

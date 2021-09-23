@@ -25,9 +25,9 @@ input_text = """天空是蔚蓝色，窗外有"""
 
 def main():
     print("Loading model")
-    cpm2 = bminf.models.CPM1()
+    cpm1 = bminf.models.CPM1()
     print("Start")
-    generate(cpm2, input_text)
+    generate(cpm1, input_text)
 
 if __name__ == "__main__":
     main()
