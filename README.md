@@ -9,7 +9,7 @@ BMInf (Big Model Inference) is a low-resource inference package for large-scale 
 
 - **Hardware Friendly.** BMInf supports running models with more than 10 billion parameters on a single NVIDIA GTX 1060 GPU in its minimum requirements. Running with better GPUs leads to better performance. In cases where the GPU memory supports the large model inference (such as V100 or A100), BMInf still has a significant performance improvement over the existing PyTorch implementation.
 - **Open.** The parameters of models are open. Users can access large models locally with their own machines without applying or accessing an online API.  
-- **Comprehensive Ability.**  BMInf supports generative model CPM1 [[1](#ref)], general language model CPM2.1 [[2](#ref)], and dialogue model EVA2 [[3](#ref)]. The abilities of these models cover text completion, text generation, and dialogue generation.
+- **Comprehensive Ability.**  BMInf supports generative model CPM1 [[1](#ref)], general language model CPM2.1 [[2](#ref)], and dialogue model EVA [[3](#ref)]. The abilities of these models cover text completion, text generation, and dialogue generation.
 - **Upgraded Model.** Based on CPM2 [[2](#ref)], the newly upgraded model CPM2.1 is currently supported. Based on continual learning, the text generation ability of CPM2.1 is greatly improved compared to CPM2.
 - **Convenient Deployment.** Using BMInf, it will be fast and convenient to develop interesting downstream applications.
 
@@ -44,7 +44,7 @@ Here we list the minimum and recommended configurations for running BMInf.
 
 Here we provide a simple script for using BMInf. 
 
-Firstly, import a model from the model base (e.g. CPM1, CPM2, EVA2).
+Firstly, import a model from the model base (e.g. CPM1, CPM2, EVA).
 ```python
 import bminf
 cpm2 = bminf.models.CPM2()
@@ -81,7 +81,7 @@ BMInf currently supports these models:
 
 - **CPM1.** CPM1 [[2](#ref)] is a generative Chinese pre-trained language model with 2.6 billion parameters. The architecture of CPM1 is similar to GPT [[4](#ref)] and it can be used in various NLP tasks such as conversation, essay generation, cloze test, and language understanding.
 
-- **EVA2.** EVA2 is an upgraded version of EVA [[3](#ref)], which is a Chinese pre-trained dialogue model with 2.8 billion parameters. EVA performs well on many dialogue tasks, especially in the multi-turn interaction of human-bot conversations.
+- **EVA.** EVA [[3](#ref)] is a Chinese pre-trained dialogue model with 2.8 billion parameters. EVA performs well on many dialogue tasks, especially in the multi-turn interaction of human-bot conversations.
 
 Besides these models, we are now working on adding more PLMs especially large-scale PLMs. We welcome every contributor to add their models to this project by proposing an issue.
 
