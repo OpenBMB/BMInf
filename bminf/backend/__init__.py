@@ -14,6 +14,8 @@ cublas = cupy.cuda.cublas
 def _check_version():
     global cupy_ver
     import cupy
+    if not isinstance(cupy.__version__, str):
+        return  # build docs
     if not cupy.__version__.startswith("9."):
         raise RuntimeError("cupy 9 is required")
         

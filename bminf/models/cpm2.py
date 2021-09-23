@@ -14,6 +14,17 @@ class CPM2Configuration(T5Configuration):
 
 class CPM2(T5):
     def __init__(self, device : Union[None, int, cupy.cuda.Device] = None, memory_limit : Optional[int] = None, config : Optional[CPM2Configuration] = None):
+        """Model CPM-2: Large-scale Cost-effective Pre-trained Language Models
+        
+        `[Repo] <https://github.com/TsinghuaAI/CPM-2-Pretrain>`__
+        `[PDF] <https://arxiv.org/abs/2106.10715>`__
+
+        Args:
+            device: Index of CUDA device or ``None``.
+            memory_limit: Total memory limit for this model in bytes.
+            config: A CPM2 configuration object.
+
+        """
         if config is None:
             config = CPM2Configuration()
 
@@ -58,6 +69,21 @@ class CPM2(T5):
             frequency_penalty : float = 0,
             presence_penalty : float = 0,
         ):
+        """Generate spans from input sentence.
+
+        Args:
+            input_sentence: Input sentence with "<span>" tokens.
+            spans_position: List of span positions. If ``None``, the positions of span are automatically detected.
+            max_tokens: Maximum number of tokens to generate.
+            top_n: Only sampling from top n tokens in the result.
+            top_p: Only sampling from tokens that comprising the top p probability in the result.
+            temperature: Temperature for sampling. Higher values mean more diverse results. 
+            frequency_penalty: A penalty used to avoid models generating the same content.
+            presence_penalty: A penalty used to avoid models generating the same topic.
+        
+        Returns:
+            A list of generated spans, including positions and contents.
+        """
         if spans_position is None:
             spans_position = []
             st = 0
