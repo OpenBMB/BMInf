@@ -100,13 +100,13 @@ PyTorch | NVIDIA Tesla V100 | - | 3
 PyTorch | NVIDIA Tesla V100 | - | 7
 
 ## Contributing
-Here is the QRCode to our WeChat user community and we welcome others to contribute codes following our [contributing guidelines](https://github.com/OpenBMB/inference/blob/master/CONTRIBUTING.md).
+Here is the QRCode to our WeChat user community and we welcome others to contribute codes following our [contributing guidelines](https://github.com/OpenBMB/BMInf/blob/master/CONTRIBUTING.md).
 
 ![Our community](./docs/source/images/community.jpeg)
 
 ## License
 
-The package is released under the [Apache 2.0](https://github.com/OpenBMB/inference/blob/master/LICENSE) License.
+The package is released under the [Apache 2.0](https://github.com/OpenBMB/BMInf/blob/master/LICENSE) License.
 
 ## References
 <div id="ref"></div>

@@ -97,13 +97,13 @@ PyTorch | NVIDIA Tesla V100 | - | 3
 PyTorch | NVIDIA Tesla V100 | - | 7
 
 ## 参与贡献
-我们提供了微信的开源社区二维码并且欢迎贡献者参照我们的[贡献指南](https://github.com/OpenBMB/inference/blob/master/CONTRIBUTING.md)贡献相关代码。
+我们提供了微信的开源社区二维码并且欢迎贡献者参照我们的[贡献指南](https://github.com/OpenBMB/BMInf/blob/master/CONTRIBUTING.md)贡献相关代码。
 
 ![Our community](./docs/source/images/community.jpeg)
 
 ## 开源许可
 
-该工具包使用[Apache 2.0](https://github.com/OpenBMB/inference/blob/master/LICENSE)开源许可证。
+该工具包使用[Apache 2.0](https://github.com/OpenBMB/BMInf/blob/master/LICENSE)开源许可证。
 
 ## 参考文献
 <div id="ref"></div>
