@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 SPAN_TOKEN = "<span>"
 
 class CPM2Configuration(T5Configuration):
-    MODEL_NAME = "cpm2"
+    MODEL_NAME = "cpm2.1"
 
 class CPM2(T5):
     def __init__(self, device : Union[None, int, cupy.cuda.Device] = None, memory_limit : Optional[int] = None, config : Optional[CPM2Configuration] = None):
