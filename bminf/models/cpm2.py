@@ -70,21 +70,7 @@ class CPM2(T5):
                 presence_penalty : float = 0,
                 start_span_idx : int = 0,
         ):
-        """Generate spans from input sentence.
-
-        Args:
-            input_sentence: Input sentence with "<span>" tokens.
-            spans_position: List of span positions. If ``None``, the positions of span are automatically detected.
-            max_tokens: Maximum number of tokens to generate.
-            top_n: Only sampling from top n tokens in the result.
-            top_p: Only sampling from tokens that comprising the top p probability in the result.
-            temperature: Temperature for sampling. Higher values mean more diverse results. 
-            frequency_penalty: A penalty used to avoid models generating the same content.
-            presence_penalty: A penalty used to avoid models generating the same topic.
         
-        Returns:
-            A list of generated spans, including positions and contents.
-        """
         if spans_position is None:
             spans_position = []
             st = 0
@@ -142,6 +128,21 @@ class CPM2(T5):
             frequency_penalty : float = 0,
             presence_penalty : float = 0,
         ):
+        """Generate spans from input sentence.
+
+        Args:
+            input_sentence: Input sentence with "<span>" tokens.
+            spans_position: List of span positions. If ``None``, the positions of span are automatically detected.
+            max_tokens: Maximum number of tokens to generate.
+            top_n: Only sampling from top n tokens in the result.
+            top_p: Only sampling from tokens that comprising the top p probability in the result.
+            temperature: Temperature for sampling. Higher values mean more diverse results. 
+            frequency_penalty: A penalty used to avoid models generating the same content.
+            presence_penalty: A penalty used to avoid models generating the same topic.
+        
+        Returns:
+            A list of generated spans, including positions and contents.
+        """
         # Input: ... <s_0> ... <s_1> ... <s_2> ...
         # Output: <s> <s_0> ... <s_1> ... <s_2> ...
 
@@ -155,8 +156,6 @@ class CPM2(T5):
         next_span = 1
 
         for _ in range(max_tokens):
-            if decoder_ipts in [7,24,17,47,16,12,18,13,19,9,42,53,51,27,2154,2891,2154,6027]:
-                break
             logits = self.decode_step(ctx, [decoder_ipts])[0]
             decoder_ipts = sampler.sample(logits)
             if decoder_ipts == self.tokenizer.get_span(next_span):
@@ -178,7 +177,6 @@ class CPM2(T5):
 
     def generate(self, 
             input_sentence : str,
-            spans_position : Optional[List[int]] = None,
             max_tokens : int = 128,
             top_n : Optional[int] = None,
             top_p : Optional[float] = None,
@@ -186,28 +184,39 @@ class CPM2(T5):
             frequency_penalty : float = 0,
             presence_penalty : float = 0,
         ):
+        """Generate some words from the model.
+
+        Args:
+            input_sentence: Your input.
+            max_tokens: Maximum number of tokens to generate.
+            top_n: Only sampling from top n tokens in the result.
+            top_p: Only sampling from tokens that comprising the top p probability in the result.
+            temperature: Temperature for sampling. Higher values mean more diverse results. 
+            frequency_penalty: A penalty used to avoid models generating the same content.
+            presence_penalty: A penalty used to avoid models generating the same topic.
+        
+        Returns:
+            The result sentence.
+        """
         # Input: ... <s_189>
         # Output: <s> <s_189> ...
-        ctx, sampler, spans_position = self.pre_processing(input_sentence, spans_position,
-                                           max_tokens, top_n, top_p, temperature,
-                                           frequency_penalty, presence_penalty, 189)
+        ctx, sampler, spans_position = self.pre_processing(
+            input_sentence + SPAN_TOKEN, 
+            [len(input_sentence)],
+            max_tokens, top_n, top_p, temperature,
+            frequency_penalty, presence_penalty, 189
+        )
 
 
         logits = self.decode_step(ctx, [self.tokenizer.sod_id])[0]
         decoder_ipts = self.tokenizer.get_span(189)
-        blanks = [[]]
+        blanks = []
 
         for _ in range(max_tokens):
             if decoder_ipts in [7,24,17,47,16,12,18,13,19,9,42,53,51,27,2154,2891,2154,6027]:
                 break
             logits = self.decode_step(ctx, [decoder_ipts])[0]
             decoder_ipts = sampler.sample(logits)
-            blanks[-1].append(decoder_ipts)
+            blanks.append(decoder_ipts)
 
-        return [
-            {
-                "position": blank_pos,
-                "text": self.id_to_text(blank_tokens)
-            } 
-            for blank_pos, blank_tokens in zip( spans_position, blanks )
-        ]
+        return self.id_to_text(blanks)
