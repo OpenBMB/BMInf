@@ -27,7 +27,7 @@ BMInf (Big Model Inference) 是一个用于大规模预训练语言模型（pret
 
 - 从源代码安装: 下载工具包并在目录中运行 ``python setup.py install``
 
-- 从Docker安装: ``docker run -it --gpus 1 -v $HOME/.cache/bigmodels:/root/.cache/bigmodels --rm openbmb/bminf:0.0.2 python3 examples/fill_blank.py``
+- 从Docker安装: ``docker run -it --gpus 1 -v $HOME/.cache/bigmodels:/root/.cache/bigmodels --rm openbmb/bminf python3 examples/fill_blank.py``
 
 运行BMInf的最低配置与推荐配置：
 
@@ -91,8 +91,8 @@ BMInf目前支持下列模型：
 BMInf | NVIDIA GeForce GTX 1060 | 533 | 1.6
 BMInf | NVIDIA GeForce GTX 1080Ti | 1200 | 12
 BMInf | NVIDIA GeForce GTX 2080Ti | 2275 | 19
-BMInf | NVIDIA Tesla V100 | - | 20
-BMInf | NVIDIA Tesla A100 | - | 26
+BMInf | NVIDIA Tesla V100 | 2966 | 20
+BMInf | NVIDIA Tesla A100 | 4365 | 26
 PyTorch | NVIDIA Tesla V100 | - | 3
 PyTorch | NVIDIA Tesla V100 | - | 7
 

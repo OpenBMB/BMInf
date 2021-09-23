@@ -14,7 +14,7 @@ python setup.py install
 
 ## From Docker 
 ```
-docker run -it --gpus 1 -v $HOME/.cache/bigmodels:/root/.cache/bigmodels --rm openbmb/bminf:0.0.2 python3 examples/fill_blank.py
+docker run -it --gpus 1 -v $HOME/.cache/bigmodels:/root/.cache/bigmodels --rm openbmb/bminf python3 examples/fill_blank.py
 ```
 
 After installation, you can run an example in the ``examples`` folder to find if it is installed correctly.
