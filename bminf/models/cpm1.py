@@ -13,6 +13,17 @@ class CPM1Configuration(GPTConfiguration):
 
 class CPM1(GPT):
     def __init__(self, device : Union[None, int, cupy.cuda.Device] = None, memory_limit : Optional[int] = None, config : Optional[CPM1Configuration] = None):
+        """Model CPM-1: A Large-scale Generative Chinese Pre-trained Language Model
+        
+        `[Repo] <https://github.com/TsinghuaAI/CPM-1-Generate>`__
+        `[PDF] <https://arxiv.org/abs/2012.00413>`__
+
+        Args:
+            device: Index of CUDA device or ``None``.
+            memory_limit: Total memory limit for this model in bytes.
+            config: A CPM1 configuration object.
+
+        """
         if config is None:
             config = CPM1Configuration()
 
@@ -40,6 +51,20 @@ class CPM1(GPT):
             frequency_penalty : float = 0,
             presence_penalty : float = 0,
         ):
+        """Generate some words from the model.
+        
+        Args:
+            input_sentence: Your input.
+            max_tokens: Max number of tokens to generate.
+            top_n: Only sampling from top n tokens in the result.
+            top_p: Only sampling from tokens that comprising the top p probability in the result.
+            temperature: Temperature for sampling. Higher values mean more diverse results. 
+            frequency_penalty: A penalty used to avoid models generating the same content.
+            presence_penalty: A penalty used to avoid models generating the same topic.
+
+        Returns:
+            The result sentence.
+        """
         idx = self.text_to_id(input_sentence)
         input_length = len(idx)
         if input_length + max_tokens > self.max_length:
