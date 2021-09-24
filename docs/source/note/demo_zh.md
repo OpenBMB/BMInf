@@ -10,18 +10,18 @@ BMInf(Big Model Inference)-Demos 是根据BMInf中的三个模型设计的三个
 
 + 文本填空演示
 <div  align="center">    
-<img src="./images/demo1.jpg" width = "800" height = "400" align=center />
+<img src="./demo1.jpg" width = "800" height = "400" align=center />
 </div>
 
 + 故事生成演示
 
 <div  align="center">    
-<img src="./images/demo2.jpg" width = "800" height = "400" align=center />
+<img src="./demo2.jpg" width = "800" height = "400" align=center />
 </div>
 
 + 智能对话演示
 <div  align="center">    
-<img src="./images/demo3.jpg" width = "800" height = "400" align=center />
+<img src="./demo3.jpg" width = "800" height = "400" align=center />
 </div>
 
 # **安装**
