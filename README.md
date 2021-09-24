@@ -97,7 +97,7 @@ BMInf | NVIDIA GeForce GTX 2080Ti | 2275 | 19
 BMInf | NVIDIA Tesla V100 | 2966 | 20
 BMInf | NVIDIA Tesla A100 | 4365 | 26
 PyTorch | NVIDIA Tesla V100 | - | 3
-PyTorch | NVIDIA Tesla V100 | - | 7
+PyTorch | NVIDIA Tesla A100 | - | 7
 
 ## Contributing
 Here is the QRCode to our WeChat user community and we welcome others to contribute codes following our [contributing guidelines](https://github.com/OpenBMB/BMInf/blob/master/CONTRIBUTING.md).
