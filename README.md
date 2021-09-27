@@ -1,6 +1,6 @@
 <h1 align="center">BMInf</h1>
 <p align="center">
-  <a href="https://bminf.readthedocs.io/" target="_blank">Documentation</a> • <a href="#features">Features</a> • <a href="#install">Installation</a> • <a href="#quick-start">Quick Start</a> • <a href="#supported-models">Supported Models</a> • <a href="./README-ZH.md" target="_blank">简体中文</a>
+  <a href="https://bminf.readthedocs.io/" target="_blank">Documentation</a> • <a href="https://github.com/OpenBMB/BMInf-demos">Demo</a> •  <a href="#features">Features</a> • <a href="#install">Installation</a> • <a href="#quick-start">Quick Start</a> • <a href="#supported-models">Supported Models</a> • <a href="./README-ZH.md" target="_blank">简体中文</a>
 <br>
 </p>
 
@@ -29,6 +29,8 @@ Our [documentation](https://bminf.readthedocs.io/) provides more information abo
 - From source code: download the package and run ``python setup.py install``
 
 - From docker: ``docker run -it --gpus 1 -v $HOME/.cache/bigmodels:/root/.cache/bigmodels --rm openbmb/bminf python3 examples/fill_blank.py``
+
+**Note:** CUDA version >= 10.1 is required.
 
 Here we list the minimum and recommended configurations for running BMInf. 
 

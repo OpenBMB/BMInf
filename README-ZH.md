@@ -1,6 +1,6 @@
 <h1 align="center">BMInf</h1>
 <p align="center">
-  <a href="https://bminf.readthedocs.io/" target="_blank">文档</a> • <a href="#features">特性</a> • <a href="#install">安装</a> • <a href="#quick-start">快速上手</a> • <a href="#supported-models">支持模型</a> • <a href="./README.md" target="_blank">English</a>
+  <a href="https://bminf.readthedocs.io/" target="_blank">文档</a> • <a href="https://github.com/OpenBMB/BMInf-demos">Demo</a> • <a href="#features">特性</a> • <a href="#install">安装</a> • <a href="#quick-start">快速上手</a> • <a href="#supported-models">支持模型</a> • <a href="./README.md" target="_blank">English</a>
 <br>
 </p>
 
@@ -79,6 +79,8 @@ BMInf目前支持下列模型：
 - **CPM2.1**. CPM2.1是CPM2 [[1](#ref)] 的升级版本。CPM2是一个拥有110亿参数的通用中文预训练语言模型。基于CPM2，CPM2.1新增了一个生成式的预训练任务并基于持续学习范式进行训练。实验结果证明CPM2.1比CPM2具有更好的生成能力。
 - **CPM1.** CPM1 [[2](#ref)] 是一个拥有26亿参数的生成式中文预训练语言模型。CPM1的模型架构与GPT [[4](#ref)] 类似，它能够被应用于广泛的自然语言处理任务，如对话、文章生成、完形填空和语言理解。
 - **EVA.** EVA [[3](#ref)]是一个有着28亿参数的中文预训练对话模型。EVA在很多对话任务上表现优异，尤其是在多轮人机交互对话任务上。
+
+**注意：** 需要CUDA 10.1以上版本。
 
 除了这些模型，我们目前致力于导入更多的预训练语言模型，尤其是大规模预训练语言模型。我们欢迎每一位贡献者通过提交issue来添加他们的模型。
 
