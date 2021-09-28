@@ -35,9 +35,11 @@ python examples/fill_blank.py
 | GPU | NVIDIA GeForce GTX 1060 6GB | NVIDIA Tesla V100 16GB
 | PCI-E |  PCI-E 3.0 x16 |  PCI-E 3.0 x16
 
+BMInf支持基于NVIDIA Pascal架构及更新架构的GPU，查看[对照表](https://en.wikipedia.org/wiki/CUDA#GPUs_supported)来明确你的GPU是否被支持。
+
 ## 软件要求
 
-BMInf需要安装CUDA 10或者CUDA 11，所有的依赖包都会在安装过程中自动被安装。
+BMInf需要安装CUDA 10.1及以上版本，所有的依赖包都会在安装过程中自动被安装。
 
 - **python** >= 3.6
 - **requests**
@@ -50,7 +52,6 @@ BMInf需要安装CUDA 10或者CUDA 11，所有的依赖包都会在安装过程�
 
 | CUDA版本 | 包名称 |
 |-|-|
-v10.0 | cupy-cuda100
 v10.1 | cupy-cuda101
 v10.2 | cupy-cuda102
 v11.0 | cupy-cuda110

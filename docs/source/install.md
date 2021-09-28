@@ -35,9 +35,11 @@ Here we list the minimum and recommended configurations for running BMInf.
 | GPU | NVIDIA GeForce GTX 1060 6GB | NVIDIA Tesla V100 16GB
 | PCI-E |  PCI-E 3.0 x16 |  PCI-E 3.0 x16
 
+GPUs with the Pascal micro-architecture or newer architecture are supported by BMInf. Refer to the [table](https://en.wikipedia.org/wiki/CUDA#GPUs_supported) to check whether your GPU is supported. 
+
 ## Software Requirement
 
-BMInf requires CUDA 10 or CUDA 11 installed and all the dependencies can be automaticlly installed by the installation process.
+BMInf requires CUDA version >= 10.1 and all the dependencies can be automaticlly installed by the installation process.
 
 - **python** >= 3.6
 - **requests**
@@ -50,7 +52,6 @@ Here is the table to find the corresponding cupy package for your CUDA version. 
 
 | CUDA Version | Package Name |
 |-|-|
-v10.0 | cupy-cuda100
 v10.1 | cupy-cuda101
 v10.2 | cupy-cuda102
 v11.0 | cupy-cuda110
