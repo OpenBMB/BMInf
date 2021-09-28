@@ -30,7 +30,7 @@ Our [documentation](https://bminf.readthedocs.io/) provides more information abo
 
 - From docker: ``docker run -it --gpus 1 -v $HOME/.cache/bigmodels:/root/.cache/bigmodels --rm openbmb/bminf python3 examples/fill_blank.py``
 
-**Note:** CUDA version >= 10.1 is required.
+### Hardware Requirement
 
 Here we list the minimum and recommended configurations for running BMInf. 
 
@@ -39,6 +39,19 @@ Here we list the minimum and recommended configurations for running BMInf.
 | Memory | 16GB | 24GB
 | GPU | NVIDIA GeForce GTX 1060 6GB | NVIDIA Tesla V100 16GB
 | PCI-E |  PCI-E 3.0 x16 |  PCI-E 3.0 x16
+
+GPUs with the Pascal micro-architecture or newer architecture are supported by BMInf. Refer to the [table](https://en.wikipedia.org/wiki/CUDA#GPUs_supported) to check whether your GPU is supported. 
+
+### Software Requirement
+
+BMInf requires CUDA version >= 10.1 and all the dependencies can be automaticlly installed by the installation process.
+
+- **python** >= 3.6
+- **requests**
+- **tqdm** 
+- **jieba**
+- **numpy** 
+- **cupy-cuda<your_cuda_version>** >= 9, <10
 
 <div id="quick-start"></div>
 

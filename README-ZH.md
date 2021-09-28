@@ -29,13 +29,29 @@ BMInf (Big Model Inference) 是一个用于大规模预训练语言模型（pret
 
 - 从Docker安装: ``docker run -it --gpus 1 -v $HOME/.cache/bigmodels:/root/.cache/bigmodels --rm openbmb/bminf python3 examples/fill_blank.py``
 
-运行BMInf的最低配置与推荐配置：
+### 硬件要求
+
+在下表中我们列出了运行BMInf的最低配置与推荐配置：
 
 | | 最低配置 | 推荐配置 |
 |-|-|-|
 | 内存 | 16GB | 24GB
 | GPU | NVIDIA GeForce GTX 1060 6GB | NVIDIA Tesla V100 16GB
 | PCI-E |  PCI-E 3.0 x16 |  PCI-E 3.0 x16
+
+BMInf支持基于NVIDIA Pascal架构及更新架构的GPU，查看[对照表](https://en.wikipedia.org/wiki/CUDA#GPUs_supported)来明确你的GPU是否被支持。
+
+### 软件要求
+
+BMInf需要安装CUDA 10.1及以上版本，所有的依赖包都会在安装过程中自动被安装。
+
+- **python** >= 3.6
+- **requests**
+- **tqdm** 
+- **jieba**
+- **numpy** 
+- **cupy-cuda<你的cuda版本>** >= 9, <10
+
 
 <div id="quick-start"></div>
 
@@ -79,8 +95,6 @@ BMInf目前支持下列模型：
 - **CPM2.1**. CPM2.1是CPM2 [[1](#ref)] 的升级版本。CPM2是一个拥有110亿参数的通用中文预训练语言模型。基于CPM2，CPM2.1新增了一个生成式的预训练任务并基于持续学习范式进行训练。实验结果证明CPM2.1比CPM2具有更好的生成能力。
 - **CPM1.** CPM1 [[2](#ref)] 是一个拥有26亿参数的生成式中文预训练语言模型。CPM1的模型架构与GPT [[4](#ref)] 类似，它能够被应用于广泛的自然语言处理任务，如对话、文章生成、完形填空和语言理解。
 - **EVA.** EVA [[3](#ref)]是一个有着28亿参数的中文预训练对话模型。EVA在很多对话任务上表现优异，尤其是在多轮人机交互对话任务上。
-
-**注意：** 需要CUDA 10.1以上版本。
 
 除了这些模型，我们目前致力于导入更多的预训练语言模型，尤其是大规模预训练语言模型。我们欢迎每一位贡献者通过提交issue来添加他们的模型。
 
