@@ -183,6 +183,7 @@ class CPM2(T5):
             temperature : float = 0.9,
             frequency_penalty : float = 0,
             presence_penalty : float = 0,
+            stop_words : Optional[List[str]] = None,
         ):
         """Generate some words from the model.
 
@@ -200,6 +201,15 @@ class CPM2(T5):
         """
         # Input: ... <s_189>
         # Output: <s> <s_189> ...
+
+        if stop_words is None:
+            stop_words = []
+        else:
+            stop_words = [self.tokenizer.encode(i) for i in stop_words]
+        # <eod> must be in the set of stop words.
+        if not self.tokenizer.eod_id in stop_words:
+            stop_words.append(self.tokenizer.eod_id)
+
         ctx, sampler, spans_position = self.pre_processing(
             input_sentence + SPAN_TOKEN, 
             [len(input_sentence)],
@@ -213,7 +223,7 @@ class CPM2(T5):
         blanks = []
 
         for _ in range(max_tokens):
-            if decoder_ipts in [7,24,17,47,16,12,18,13,19,9,42,53,51,27,2154,2891,2154,6027]:
+            if decoder_ipts in stop_words:
                 break
             logits = self.decode_step(ctx, [decoder_ipts])[0]
             decoder_ipts = sampler.sample(logits)
