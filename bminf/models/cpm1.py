@@ -1,4 +1,4 @@
-from typing import Optional, Union, List
+from typing import Optional, Tuple, Union, List
 from ..arch.gpt import GPTConfiguration, GPT
 import cupy
 import numpy as np
@@ -50,7 +50,8 @@ class CPM1(GPT):
             temperature : float = 0.9,
             frequency_penalty : float = 0,
             presence_penalty : float = 0,
-        ):
+            stop_tokens : Optional[List[str]] = None,
+        ) -> Tuple[str, bool]:
         """Generate some words from the model.
         
         Args:
@@ -61,10 +62,21 @@ class CPM1(GPT):
             temperature: Temperature for sampling. Higher values mean more diverse results. 
             frequency_penalty: A penalty used to avoid models generating the same content.
             presence_penalty: A penalty used to avoid models generating the same topic.
-
+            stop_tokens: A list of tokens that will stop the generation.
+            
         Returns:
-            The result sentence.
+            The result sentence and a boolean indicating whether stop_tokens has been generated.
         """
+
+        if stop_tokens is None:
+            stop_tokens = []
+        else:
+            stop_tokens = [self.tokenizer.encode(i) for i in stop_tokens]
+
+        # <eod> must be in the set of stop words.
+        if not self.tokenizer.eod_id in stop_tokens:
+            stop_tokens.append(self.tokenizer.eod_id)
+
         idx = self.text_to_id(input_sentence)
         input_length = len(idx)
         if input_length + max_tokens > self.max_length:
@@ -89,11 +101,13 @@ class CPM1(GPT):
 
         ret = []
 
+        stoped = False
         for _ in range(max_tokens):
             dec_inputs = sampler.sample(x[0])
-            if dec_inputs == self.tokenizer.eod_id:
+            if dec_inputs in stop_tokens:
+                stoped = True
                 break
             ret.append(dec_inputs)
             x = self.decode_step(ctx, [dec_inputs])
         
-        return self.id_to_text(ret)
+        return self.id_to_text(ret), stoped

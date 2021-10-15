@@ -1,4 +1,4 @@
-from typing import Optional, Union, List
+from typing import Optional, Tuple, Union, List
 from ..arch.t5 import T5Configuration, T5
 import cupy
 import numpy as np
@@ -183,8 +183,8 @@ class CPM2(T5):
             temperature : float = 0.9,
             frequency_penalty : float = 0,
             presence_penalty : float = 0,
-            stop_words : Optional[List[str]] = None,
-        ):
+            stop_tokens : Optional[List[str]] = None,
+        ) -> Tuple[str, bool]:
         """Generate some words from the model.
 
         Args:
@@ -195,22 +195,24 @@ class CPM2(T5):
             temperature: Temperature for sampling. Higher values mean more diverse results. 
             frequency_penalty: A penalty used to avoid models generating the same content.
             presence_penalty: A penalty used to avoid models generating the same topic.
+            stop_tokens: A list of tokens that will stop the generation.
         
         Returns:
-            The result sentence.
+            The result sentence and a boolean indicating whether stop_tokens has been generated.
         """
         # Input: ... <s_189>
         # Output: <s> <s_189> ...
 
-        if stop_words is None:
-            stop_words = []
+        if stop_tokens is None:
+            stop_tokens = []
         else:
-            stop_words = [self.tokenizer.encode(i) for i in stop_words]
-        # <eod> must be in the set of stop words.
-        if not self.tokenizer.eod_id in stop_words:
-            stop_words.append(self.tokenizer.eod_id)
+            stop_tokens = [self.tokenizer.encode(i) for i in stop_tokens]
 
-        ctx, sampler, spans_position = self.pre_processing(
+        # <eod> must be in the set of stop words.
+        if not self.tokenizer.eod_id in stop_tokens:
+            stop_tokens.append(self.tokenizer.eod_id)
+
+        ctx, sampler, _ = self.pre_processing(
             input_sentence + SPAN_TOKEN, 
             [len(input_sentence)],
             max_tokens, top_n, top_p, temperature,
@@ -222,11 +224,13 @@ class CPM2(T5):
         decoder_ipts = self.tokenizer.get_span(189)
         blanks = []
 
+        stoped = False
         for _ in range(max_tokens):
-            if decoder_ipts in stop_words:
-                break
             logits = self.decode_step(ctx, [decoder_ipts])[0]
             decoder_ipts = sampler.sample(logits)
+            if decoder_ipts in stop_tokens:
+                stoped = True
+                break
             blanks.append(decoder_ipts)
 
-        return self.id_to_text(blanks)
+        return self.id_to_text(blanks), stoped
