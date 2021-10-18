@@ -17,7 +17,7 @@ jobs:
         run: |
           pip install twine --user
           pip install wheel
-          BM_BUILD=1 BM_VERSION=${GITHUB_REF##refs/tags/v} python3 setup.py sdist --format=gztar  
+          BM_BUILD=1 BM_VERSION=${GITHUB_REF##refs/tags/} python3 setup.py sdist --format=gztar  
       - name: Publish distribution 📦 to PyPI
         uses: pypa/gh-action-pypi-publish@master
         with:
