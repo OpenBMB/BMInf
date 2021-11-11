@@ -1,30 +1,48 @@
-from .base import Layer
-from ..parameter import Parameter
-from ..allocator import Allocator
-import cupy
+from typing import Optional
+from ..core import Layer, Context, Tensor, Parameter
 import numpy as np
-from ..functions.scale_copy import elementwise_copy
+from cpm_kernels import kernels as ck
 
 class Embedding(Layer):
+    def __init__(self, vocab_size : int, embedding_size : int):
+        super().__init__()
 
-    def __init__(self, num_embeddings, embedding_dim):
-        self.embedding_dim = embedding_dim
-        self.weight = Parameter((num_embeddings, embedding_dim), dtype=cupy.float16)
-
-
-    def forward(self, allocator : Allocator, x):
-        if isinstance(x, list):
-            x = np.array(x).astype(np.int64)
-        
-        assert isinstance(x, np.ndarray)
-
-        
-        out = allocator.alloc_array( x.shape + (self.embedding_dim,), dtype=self.weight.dtype )
-        cupy.take(self.weight.value, x, axis=0, out=out)
-
-        out_fp16 = allocator.alloc_array(out.shape, dtype=cupy.float16)
-        elementwise_copy(out, out_fp16)
-        del out
-
-        return out_fp16
+        self.embedding_size = embedding_size
+        self.weight = Parameter(
+            (vocab_size, embedding_size),
+            np.float16
+        )
     
+    def forward(self,
+            ctx : Context, 
+            ids : Tensor, 
+            x_out : Tensor
+        ):
+        assert ids.dtype == np.int32
+        batch, seq_len = ids.shape
+        assert x_out.shape == (batch, self.embedding_size, seq_len)
+
+        ck.embedding_forward(
+            batch, self.embedding_size, seq_len,
+            ids.ptr,
+            self.weight.value.ptr,
+            x_out.ptr,
+            ctx.current_stream
+        )
+
+    def step(self,
+            ctx : Context, 
+            ids : Tensor, 
+            x_out : Tensor
+        ):
+        assert ids.dtype == np.int32
+        batch = ids.shape
+        assert x_out.shape == (batch, self.embedding_size)
+        
+        ck.embedding_step(
+            batch, self.embedding_size,
+            ids.ptr,
+            self.weight.value.ptr,
+            x_out.ptr,
+            ctx.current_stream
+        )
