@@ -197,22 +197,76 @@ class DecoderBlockWithCrossAttention(Layer):
 
     def step(self, 
             ctx : Context, 
-            x : Tensor,                     # (batch, dim_model)
-            encoder_output : Tensor,        # (batch, dim_model, seq_k)
-            mask_x : Tensor,                # (batch, seq_q, seq_q)
-            mask_cross : Tensor,            # (batch, seq_k, seq_q)
-            bias_self : Optional[Tensor],   # (num_heads, seq_q, seq_q)
-            bias_cross : Optional[Tensor],  # (num_heads, seq_k, seq_q)
-            past_k : Tensor,                # (batch, num_heads, kv_buffer_len, dim_head)
-            past_v : Tensor,                # (batch, num_heads, kv_buffer_len, dim_head)
+            x : Tensor,                         # (batch, dim_model)
+            encoder_output : Optional[Tensor],  # (batch, dim_model, seq_k) can be None if step_pos >
+            mask_x : Tensor,                    # (batch, buffer_len)
+            mask_cross : Tensor,                # (batch, seq_k)
+            bias_self : Optional[Tensor],       # (num_heads, buffer_len)
+            bias_cross : Optional[Tensor],      # (num_heads, seq_k)
+
+            # buffers
+            past_k_self : Tensor,               # (batch, num_heads, buffer_len, dim_head)
+            past_v_self : Tensor,               # (batch, num_heads, buffer_len, dim_head)
+            past_k_cros : Tensor,               # (batch, num_heads, seq_k, dim_head)
+            past_v_cros : Tensor,               # (batch, num_heads, seq_k, dim_head)
+
             step_pos : int,
-            x_out : Tensor,                 # (batch, dim_model)
+            x_out : Tensor,                     # (batch, dim_model)
         ):
         batch, dim_model = x.shape
-        assert encoder_output.shape == past_k.shape
-        assert encoder_output.shape[0] == batch
-        kv_buffer_len = past_k.shape[2]
-        assert mask_x.shape == (batch, kv_buffer_len)
-        assert mask_cross.shape == (batch, kv_buffer_len)
-        assert kv_buffer_len > step_pos
+        assert step_pos > 0 or (encoder_output is not None and encoder_output.shape[:2] == (batch, dim_model))
+        assert past_k_self.shape == past_v_self.shape
+        assert past_k_cros.shape == past_v_cros.shape
+        assert past_k_cros.shape[2] == mask_cross.shape[1]
+        assert past_k_self.shape[:2] == past_k_cros.shape[:2]
+
+        x_mid = ctx.allocate(x.shape, x.dtype)
+        self.ln_attn.step(ctx, x, x_mid)
+        self.self_attn.step(
+            ctx, 
+            x_mid, past_k_self, past_v_self,
+            mask_x, bias_self,
+            x_mid,
+            True, step_pos
+        )
+        ck.arith_element_add(
+            batch, dim_model,
+            x.ptr, x_mid.ptr,
+            x_out.ptr,
+            ctx.current_stream
+        )
+
+        if step_pos == 0:
+            # init past_kv_cros for the first step
+            assert encoder_output is not None
+            self.cross_attn.init_kv(
+                ctx,
+                encoder_output,
+                past_k_cros, past_v_cros
+            )
+
+        self.ln_cross_attn.step(ctx, x_out, x_mid)
+        self.cross_attn.step(
+            ctx,
+            x_mid, past_k_cros, past_v_cros,
+            mask_cross, bias_cross,
+            x_mid,
+            False, step_pos
+        )
+        ck.arith_element_add(
+            batch, dim_model,
+            x_out.ptr, x_mid.ptr,
+            x_out.ptr,
+            ctx.current_stream
+        )
+
+        self.ln_ff.step(ctx, x_out, x_mid)
+        self.ff.step(ctx, x_mid, x_mid)
+        ck.arith_element_add(
+            batch, dim_model,
+            x_out.ptr, x_mid.ptr,
+            x_out.ptr,
+            ctx.current_stream
+        )
+        ctx.free(x_mid)
     

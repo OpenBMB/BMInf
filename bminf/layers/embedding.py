@@ -36,7 +36,7 @@ class Embedding(Layer):
             x_out : Tensor
         ):
         assert ids.dtype == np.int32
-        batch = ids.shape
+        batch = ids.shape[0]
         assert x_out.shape == (batch, self.embedding_size)
         
         ck.embedding_step(

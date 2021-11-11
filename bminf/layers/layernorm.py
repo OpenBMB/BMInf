@@ -53,16 +53,24 @@ class Layernorm(Layer):
         batch, hidden_size = x.shape
         assert hidden_size == self.dim_model
         assert x.shape == x_out.shape
-        assert x.ptr != x_out.ptr
-
-        ck.layernorm_step(
-            batch, hidden_size,
-            x.ptr,
-            x_out.ptr,
-            self.eps,
-            self.bias is not None,
-            ctx.current_stream
-        )
+        
+        if x.ptr != x_out.ptr:
+            ck.layernorm_step(
+                batch, hidden_size,
+                x.ptr,
+                x_out.ptr,
+                self.eps,
+                self.bias is not None,
+                ctx.current_stream
+            )
+        else:
+            ck.layernorm_step_inplace(
+                batch, hidden_size,
+                x.ptr,
+                self.eps,
+                self.bias is not None,
+                ctx.current_stream
+            )
 
         if self.bias is None:
             ck.arith_batch_mul(

@@ -216,7 +216,7 @@ class Attention(Layer):
             attn_score.ptr,
             ctx.current_stream
         )
-        attn_out = ctx.allocate(batch, self.num_heads  * self.dim_head)
+        attn_out = ctx.allocate((batch, self.num_heads  * self.dim_head), np.float16)
         ck.gemv_fp16_transpose(
             batch * self.num_heads, self.dim_head, kv_buffer_len,
             past_v.ptr, attn_score.ptr,

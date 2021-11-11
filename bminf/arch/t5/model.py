@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional, Tuple
 from cpm_kernels.library import cudart
 from .config import T5Configuration
 from ...core import Model, Layer, Context, Tensor, Device
@@ -147,11 +147,27 @@ class T5Model(Model):
 
         self.input_embedding.forward(ctx, tensor_ids, x_out)
         ctx.free(tensor_ids)
+    
+    def embedding_step(self,
+            ctx : Context,
+            ids : np.ndarray,       # (batch,)  int32
+            x_out : Tensor          # (batch, dim_model)
+        ):
+        if not ids.flags["C_CONTIGUOUS"]:
+            ids = ids.copy()
+        ids = ids.astype(np.int32)
+
+        tensor_ids = ctx.allocate(ids.shape, dtype=np.int32)
+        cudart.cudaMemcpy(tensor_ids.ptr, ids.ctypes.data, ids.nbytes, cudart.cudaMemcpyHostToDevice)
+
+        self.input_embedding.step(ctx, tensor_ids, x_out)
+        ctx.free(tensor_ids)
+
 
     def encode(self, 
             ctx : Context, 
-            x : Tensor, 
-            x_mask : np.ndarray
+            x : Tensor,             # (batch. dim_model, seq_len)
+            x_mask : np.ndarray     # (batch, seq_len)
         ):
         batch, dim_model, seq_len = x.shape
         assert x_mask.shape == (batch, seq_len)
@@ -188,11 +204,11 @@ class T5Model(Model):
     
     def decode(self,
             ctx : Context,
-            decoder_input : Tensor,
-            encoder_output : Tensor,
-            decoder_mask : np.ndarray,
-            encoder_mask : np.ndarray,
-            decoder_output : Tensor
+            decoder_input : Tensor,         # (batch, dim_model, seq_q)
+            encoder_output : Tensor,        # (batch, dim_model, seq_k)
+            decoder_mask : np.ndarray,      # (batch, dim_model, seq_q)
+            encoder_mask : np.ndarray,      # (batch, dim_model, seq_k)
+            decoder_output : Tensor         # (batch, vocab_size, seq_q)
         ):
         assert decoder_input.shape[:2] == encoder_output.shape[:2]
         batch, dim_model, seq_q = decoder_input.shape
@@ -240,9 +256,71 @@ class T5Model(Model):
         ctx.free(position_bias)
         cudart.cudaStreamSynchronize(ctx.current_stream)
 
+    def allocate_decode_buffer(self, ctx : Context, batch : int, length : int) -> List[Tensor]:
+        return [ 
+            ctx.allocate((batch, self.config.NUM_HEADS, length, self.config.DIM_HEAD), dtype=np.float16)
+                for _ in range(self.num_dec)
+        ]
 
 
+    def decode_step(self,
+            ctx : Context,
+            step_input : Tensor,                # (batch, dim_model)
+            encoder_output : Optional[Tensor],  # (batch, dim_model, seq_k) # needed for step_pos == 0
+            # mask_x is not needed
+            mask_encoder : Tensor,              # (batch, seq_k)
 
+            buffer_k_self : List[Tensor],       # List[(batch, num_heads, buffer_len, dim_head)]
+            buffer_v_self : List[Tensor],       # List[(batch, num_heads, buffer_len, dim_head)]
+            buffer_k_cross : List[Tensor],      # List[(batch, num_heads, seq_k, dim_head)]
+            buffer_v_cross : List[Tensor],      # List[(batch, num_heads, seq_k, dim_head)]
+
+            step_pos : int,
+            step_out : Tensor,                  # (batch, vocab_size)
+        ):
+        batch = step_input.shape[0]
+        buffer_len = buffer_k_self[0].shape[2]
+
+        tensor_mask_cross_attn = ctx.allocate(mask_encoder.shape, dtype=np.int8)
+        cudart.cudaMemcpy(tensor_mask_cross_attn.ptr, mask_encoder.ctypes.data, mask_encoder.nbytes, cudart.cudaMemcpyHostToDevice)
+
+        self_attn_mask = (np.arange(buffer_len) <= step_pos)[np.newaxis].repeat(batch, axis=0)
+        tensor_mask_self_attn = ctx.allocate(self_attn_mask.shape, dtype=np.int8)
+        cudart.cudaMemcpy(tensor_mask_self_attn.ptr, self_attn_mask.ctypes.data, self_attn_mask.nbytes, cudart.cudaMemcpyHostToDevice)
+
+        position_bias = ctx.allocate((self.config.NUM_HEADS, buffer_len), dtype=np.float16)
+        self.position_bias_dec.step(ctx, buffer_len, step_pos, position_bias)
+
+        for i in range(self.num_dec):
+            for j in range(i, self.num_dec):
+                if not self.dec_layers[j].on_device:
+                    # try to load this layer
+                    if not self.scheduler.load(self.dec_layers[j]):
+                        break
+            assert self.dec_layers[i].on_device
+            # wait for loader stream
+            cudart.cudaStreamWaitEvent(ctx.current_stream, self.dec_layers[i].loader_event)
+            self.dec_layers[i].step(
+                ctx,
+                step_input,
+                encoder_output,
+                tensor_mask_self_attn,
+                tensor_mask_cross_attn,
+                position_bias,
+                None,
+                buffer_k_self[i],
+                buffer_v_self[i],
+                buffer_k_cross[i],
+                buffer_v_cross[i],
+                step_pos,
+                step_input
+            )
+            self.scheduler.release(ctx, self.dec_layers[i])
+        self.ln_dec.step(ctx, step_input, step_input)
+        self.output_embedding.step(ctx, step_input, step_out)
+        ctx.free(tensor_mask_self_attn)
+        ctx.free(tensor_mask_cross_attn)
+        ctx.free(position_bias)
     
 
 
