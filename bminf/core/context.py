@@ -50,6 +50,7 @@ class Context:
 
     def free(self, tensor : Tensor):
         allocator = self.__allocators[tensor.device_id]
+        tensor._released = True
         allocator.free(tensor._memory)
     
     def device(self, device_idx : int) -> Device:

@@ -1,8 +1,10 @@
 
-from typing import List, Union
+from typing import Generator, List, TypeVar, Union
 from ..core import Layer, Allocator, Memory, Context
+from ..layers.layer_list import LayerList
 from cpm_kernels.library import cudart
 
+T = TypeVar("T", bound=Layer)
 class LayerScheduler:
     def __init__(self, allocator : Allocator, pool_size : int, layer_size : int, stream) -> None:
         base_ptr = allocator.allocate(pool_size * layer_size)
@@ -44,3 +46,18 @@ class LayerScheduler:
         cudart.cudaEventRecord(self.calc_event, ctx.current_stream) # release after calc this layer
         cudart.cudaStreamWaitEvent(self.stream, self.calc_event)    # wait until finished this layer
         layer.locked = False
+    
+    def loop_layers(self, ctx : Context, layers : LayerList[T], order : List[int]) -> Generator[T, None, None]:
+        for i in range(len(order)):
+            for j in range(i, len(order)):
+                if not layers[order[j]].on_device:
+                    # try to load this layer
+                    if not self.load(layers[order[j]]):
+                        break
+            assert layers[order[i]].on_device
+            # wait for loader stream
+            cudart.cudaStreamWaitEvent(ctx.current_stream, layers[order[i]].loader_event)
+
+            yield layers[order[i]]
+            
+            self.release(ctx, layers[order[i]])

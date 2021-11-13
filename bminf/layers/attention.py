@@ -227,3 +227,166 @@ class Attention(Layer):
         self.linear_out.step(ctx, attn_out, x_out)
         ctx.free(attn_out)
 
+    def backward(self,
+            ctx : Context,
+            hidden_q : Tensor,                      # (batch, dim_model, seq_q)
+            hidden_kv : Tensor,                     # (batch, dim_model, seq_k)
+            mask : Tensor,                          # (batch, seq_k, seq_q)
+            position_bias : Optional[Tensor],       # (num_heads, seq_k, seq_q)
+            grad_output : Tensor,                   # (batch, dim_model, seq_q)
+            grad_q : Tensor,                        # (batch, dim_model, seq_q)
+            grad_kv : Tensor                        # (batch, dim_model, seq_k)
+        ):
+        batch, dim_model, seq_q = hidden_q.shape
+        seq_k = hidden_kv.shape[2]
+        assert hidden_q.shape == (batch, dim_model, seq_q) and hidden_q.dtype == np.float16
+        assert hidden_kv.shape == (batch, dim_model, seq_k) and hidden_kv.dtype == np.float16
+        assert mask.shape == (batch, seq_k, seq_q) and mask.dtype == np.int8
+        assert grad_output.shape == (batch, dim_model, seq_q) and grad_output.dtype == np.float16
+        assert grad_q.shape == (batch, dim_model, seq_q) and grad_q.dtype == np.float16
+        assert grad_kv.shape == (batch, dim_model, seq_k) and grad_kv.dtype == np.float16
+        if position_bias is not None:
+            assert position_bias.shape == (self.num_heads, seq_k, seq_q) and position_bias.dtype == np.float16
+
+        h_q = ctx.allocate((batch, self.num_heads * self.dim_head, seq_q), dtype=np.float16)
+        h_k = ctx.allocate((batch, self.num_heads * self.dim_head, seq_k), dtype=np.float16)
+        self.project_q.backward(ctx, hidden_q, h_q)
+        self.project_k.backward(ctx, hidden_kv, h_k)
+
+        # h_q (batch * num_heads, dim_head, seq_q)
+        # h_k (batch * num_heads, dim_head, seq_k)
+        h_attn = ctx.allocate((batch * self.num_heads, seq_k, seq_q), dtype=np.float16)
+        ck.gemm_fp16(
+            seq_q, self.dim_head, seq_k,
+            batch * self.num_heads, batch * self.num_heads,
+            False, True,
+            h_q.ptr, h_k.ptr,
+            h_attn.ptr,
+            ctx.current_stream
+        )
+
+        if position_bias is not None:
+            ck.arith_batch_add_forward(
+                batch, self.num_heads * seq_k * seq_q,
+                h_attn.ptr,
+                position_bias.ptr,
+                h_attn.ptr,
+                ctx.current_stream
+            )
+        ck.mask(
+            batch, self.num_heads, seq_k * seq_q,
+            h_attn.ptr,
+            mask.ptr,
+            float("-inf"),
+            h_attn.ptr,
+            ctx.current_stream
+        )
+
+        # h_attn (batch * num_heads, seq_k, seq_q)
+        ck.softmax_inplace_forward(
+            batch * self.num_heads, seq_k, seq_q,
+            h_attn.ptr,
+            ctx.current_stream
+        )
+
+        h_v = ctx.allocate((batch, self.dim_head * self.num_heads, seq_k), dtype=np.float16)
+        self.project_v.forward(ctx, hidden_kv, h_v)
+
+        # Start backward
+
+        grad_attn_out = ctx.allocate((batch, self.dim_head * self.num_heads, seq_q), dtype=np.float16)
+        self.linear_out.backward(ctx, grad_output, grad_attn_out)
+
+        grad_h_v = ctx.allocate((batch, self.dim_head * self.num_heads, seq_k), dtype=np.float16)
+        ck.gemm_fp16(
+            seq_k, seq_q, self.dim_head,
+            batch * self.num_heads, batch * self.num_heads,
+            True, False,
+            h_attn.ptr, grad_attn_out.ptr,
+            grad_h_v.ptr,
+            ctx.current_stream
+        )
+        tmp_grad_kv = ctx.allocate(grad_kv.shape, dtype=np.float16)
+        self.project_k.backward(ctx, grad_h_v, tmp_grad_kv)
+        ck.arith_element_add(
+            batch, dim_model * seq_k,
+            grad_kv.ptr, tmp_grad_kv.ptr,
+            grad_kv.ptr,
+            ctx.current_stream
+        )
+        ctx.free(tmp_grad_kv)
+        ctx.free(grad_h_v)
+
+        grad_attn = ctx.allocate((batch * self.num_heads, seq_k, seq_q), dtype=np.float16)
+        ck.gemm_fp16(
+            seq_q, self.dim_head, seq_k,
+            batch * self.num_heads, batch * self.num_heads,
+            False, True,
+            grad_attn_out.ptr, h_v.ptr,
+            grad_attn.ptr,
+            ctx.current_stream
+        )
+        ctx.free(grad_attn_out)
+        ctx.free(h_v)
+        grad_attn_score = ctx.allocate((batch * self.num_heads, seq_k, seq_q), dtype=np.float16)
+        ck.softmax_backward(
+            batch * self.num_heads, seq_k, seq_q,
+            h_attn.ptr, grad_attn.ptr,
+            grad_attn_score.ptr,
+            ctx.current_stream
+        )
+        ctx.free(grad_attn)
+        ctx.free(h_attn)
+
+        ck.mask(
+            batch * self.num_heads, seq_k, seq_q,
+            grad_attn_score.ptr,
+            mask.ptr,
+            float(0),
+            grad_attn_score.ptr,
+            ctx.current_stream
+        )
+        grad_h_k = ctx.allocate((batch, self.num_heads * self.dim_head, seq_k), dtype=np.float16)
+        ck.gemm_fp16(
+            seq_k, seq_q, self.dim_head,
+            batch * self.num_heads, batch * self.num_heads,
+            True, False,
+            grad_attn_score.ptr, h_q.ptr,
+            grad_h_k.ptr,
+            ctx.current_stream
+        )
+        ctx.free(h_q)
+        tmp_grad_k = ctx.allocate((batch, dim_model, seq_k), dtype=np.float16)
+        self.project_k.backward(ctx, grad_h_k, tmp_grad_k)
+        ck.arith_element_add(
+            batch, dim_model * seq_k,
+            grad_kv.ptr, tmp_grad_k.ptr,
+            grad_kv.ptr,
+            ctx.current_stream
+        )
+        ctx.free(tmp_grad_k)
+        ctx.free(grad_h_k)
+
+        grad_h_q = ctx.allocate((batch, self.num_heads * self.dim_head, seq_q), dtype=np.float16)
+        ck.gemm_fp16(
+            seq_q, seq_k, self.dim_head,
+            batch * self.num_heads, batch * self.num_heads,
+            False, False,
+            grad_attn_score.ptr, h_k.ptr,
+            grad_h_q.ptr,
+            ctx.current_stream
+        )
+        ctx.free(h_k)
+        ctx.free(grad_attn_score)
+        tmp_grad_q = ctx.allocate((batch, dim_model, seq_q), dtype=np.float16)
+        self.project_q.backward(ctx, grad_h_q, tmp_grad_q)
+        ck.arith_element_add(
+            batch, dim_model * seq_q,
+            grad_q.ptr, tmp_grad_q.ptr,
+            grad_q.ptr,
+            ctx.current_stream
+        )
+        ctx.free(tmp_grad_q)
+        ctx.free(grad_h_q)
+
+

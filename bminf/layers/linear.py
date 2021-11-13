@@ -84,3 +84,41 @@ class Linear(Layer):
             x_out.ptr,
             ctx.current_stream
         )
+
+    def backward(self, ctx : Context, grad_output : Tensor, grad : Tensor):
+        ## WARNING: backward function of Linear layer does not accumulate gradients
+        batch, hidden_size, seq_len = grad_output.shape
+        assert hidden_size == self.out_features and grad_output.dtype == np.float16
+        assert grad.shape == (batch, self.in_features, seq_len) and grad.dtype == np.float16
+
+        quant_G = ctx.allocate((batch, self.out_features, seq_len), dtype=np.int8)
+        scale_G = ctx.allocate((batch, seq_len), dtype=np.float16)
+        ck.gemm_backward_scale_round(
+            batch, self.out_features, seq_len,
+            grad_output.ptr,
+            self.scale.value.ptr,
+            quant_G.ptr,
+            scale_G.ptr,
+            True,
+            ctx.current_stream
+        )
+        grad_i32 = ctx.allocate((batch, self.in_features, seq_len), dtype=np.int32)
+        ck.gemm_int8(
+            seq_len, self.out_features, self.in_features,
+            1, batch,
+            False, True,
+            quant_G.ptr, self.weight.value.ptr, 
+            grad_i32.ptr,
+            ctx.current_stream
+        )
+        ctx.free(quant_G)
+        ck.gemm_scale_y(
+            batch, self.in_features, seq_len,
+            grad_i32.ptr,
+            scale_G.ptr,
+            grad.ptr,
+            ctx.current_stream
+        )
+        ctx.free(scale_G)
+        ctx.free(grad_i32)
+        

@@ -11,29 +11,23 @@ class OutputLogits(Layer):
 
         self.weight = Parameter((vocab_size, dim_model), dtype=np.float16)
 
-    def forward(self, ctx : Context, x : Tensor, x_out : Tensor):
+    def forward(self,
+            ctx : Context, 
+            x : Tensor,         # (batch, dim_model, seq_q)
+            x_out : Tensor      # (batch, seq_q, vocab_size)
+        ):
         batch, dim_model, seq_len = x.shape
         assert x_out.shape == (batch, seq_len, self.vocab_size)
 
-        logits = ctx.allocate((batch, self.vocab_size, seq_len), dtype=np.float16)
-
-        # (1#batch, vocab_size, dim_model)  @ (batch, dim_model, seq_len)
+        # (batch, dim_model, seq_len)T @ (1#batch, vocab_size, dim_model)T = (batch, seq_len, vocab_size)
         ck.gemm_fp16(
-            seq_len, dim_model, self.vocab_size,
-            batch, 1,
-            False, False,
-            x.ptr, self.weight.value.ptr,
-            logits.ptr,
-            ctx.current_stream
-        )
-
-        ck.transpose(
-            batch, self.vocab_size, seq_len,
-            logits.ptr,
+            self.vocab_size, dim_model, seq_len,
+            1, batch,
+            True, True,
+            self.weight.value.ptr, x.ptr,
             x_out.ptr,
             ctx.current_stream
         )
-        ctx.free(logits)
 
     def step(self, ctx : Context, x : Tensor, x_out : Tensor):
         batch, dim_model = x.shape
@@ -44,5 +38,24 @@ class OutputLogits(Layer):
             self.weight.value.ptr,
             x.ptr,
             x_out.ptr,
+            ctx.current_stream
+        )
+    
+    def backward(self, 
+            ctx : Context,
+            grad_output : Tensor,
+            grad : Tensor
+        ):
+        ## WARNING : logits layer does not accumulate gradients
+        
+        batch, dim_model, seq_len = grad.shape
+        assert grad_output.shape == (batch, seq_len, self.vocab_size)
+
+        ck.gemm_fp16(
+            seq_len, self.vocab_size, dim_model,
+            batch, 1,
+            True, True,
+            grad_output.ptr, self.weight.value.ptr,
+            grad.ptr,
             ctx.current_stream
         )

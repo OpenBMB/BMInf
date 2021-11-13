@@ -1,8 +1,9 @@
-from typing import TypeVar, List
+from typing import Generic, TypeVar, List
 from ..core import Layer
 
-class LayerList(Layer):
-    def __init__(self, layers : List[Layer], offset = True):
+T = TypeVar("T", bound=Layer)
+class LayerList(Layer, Generic[T]):
+    def __init__(self, layers : List[T], offset = True):
         super().__init__()
         self.__offset = offset    
         self._layers = layers
@@ -17,7 +18,7 @@ class LayerList(Layer):
         self._sub_layers[name] = layer
         self._parameter_bytes += layer.nbytes
     
-    def __getitem__(self, key) -> Layer:
+    def __getitem__(self, key) -> T:
         return self._layers[key]
     
     def __iter__(self):

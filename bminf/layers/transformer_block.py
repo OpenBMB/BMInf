@@ -48,6 +48,50 @@ class EncoderBlock(Layer):
             ctx.current_stream
         )
         ctx.free(x_mid)
+    
+    def backward(self,
+            ctx : Context,
+            x : Tensor,         # (batch, dim_model, seq_q)
+            position_bias : Optional[Tensor],
+            mask : Tensor,
+            accum_grad : Tensor
+        ):
+        batch, dim_model, seq_len = x.shape
+
+        x_mid_1 = ctx.allocate((batch, dim_model, seq_len), np.float16)
+        self.ln_attn.forward(ctx, x, x_mid_1)
+
+        x_mid_2 = ctx.allocate((batch, dim_model, seq_len), np.float16)
+        self.self_attn.forward(ctx, x_mid_1, x_mid_1, mask, position_bias, x_mid_2)
+
+        ck.arith_element_add(
+            batch, dim_model * seq_len,
+            x.ptr, x_mid_2.ptr,
+            x_mid_2.ptr,
+            ctx.current_stream
+        )
+        x_mid_3 = ctx.allocate((batch, dim_model, seq_len), np.float16)
+        self.ln_ff.forward(ctx, x_mid_2, x_mid_3)
+
+        # start backward
+
+        grad_tmp = ctx.allocate((batch, dim_model, seq_len), np.float16)
+        grad_tmp.zero_(ctx)
+        self.ff.backward(ctx, x_mid_3, accum_grad, grad_tmp)
+        ctx.free(x_mid_3)
+
+        self.ln_ff.backward(ctx, x_mid_2, grad_tmp, accum_grad)
+        ctx.free(x_mid_2)
+
+        grad_tmp.zero_(ctx)
+        self.self_attn.backward(
+            ctx,
+            x_mid_1, x_mid_1, mask, position_bias,
+            accum_grad, grad_tmp, grad_tmp
+        )
+        ctx.free(x_mid_1)
+        self.ln_attn.backward(ctx, x, grad_tmp, accum_grad)
+        ctx.free(grad_tmp)
 
 
 class DecoderBlock(Layer):
@@ -136,7 +180,53 @@ class DecoderBlock(Layer):
             ctx.current_stream
         )
         ctx.free(x_mid)
+    
+    def backward(self,
+            ctx : Context,
+            x : Tensor,                     # (batch, dim_model, seq_q)
+            mask_x : Tensor,                # (batch, seq_q, seq_q)
+            bias_self : Optional[Tensor],   # (num_heads, seq_q, seq_q)
+            accum_grad : Tensor             # (batch, dim_model, seq_q)
+        ):
+        
+        batch, dim_model, seq_len = x.shape
 
+        x_mid_1 = ctx.allocate(x.shape, x.dtype)
+        self.ln_attn.forward(ctx, x, x_mid_1)
+
+        x_mid_2 = ctx.allocate(x.shape, x.dtype)
+        self.self_attn.forward(ctx, x_mid_1, x_mid_1, mask_x, bias_self, x_mid_2)
+
+        ck.arith_element_add(
+            batch, dim_model * seq_len,
+            x.ptr, x_mid_2.ptr,
+            x_mid_2.ptr,
+            ctx.current_stream
+        )
+
+        x_mid_3 = ctx.allocate(x.shape, x.dtype)
+        self.ln_ff.forward(ctx, x_mid_2, x_mid_3)
+        
+        # start backward
+
+        grad_tmp = ctx.allocate(x.shape, x.dtype)
+        grad_tmp.zero_(ctx)
+
+        self.ff.backward(ctx, x_mid_3, accum_grad, grad_tmp)
+        ctx.free(x_mid_3)
+
+        self.ln_ff.backward(ctx, x_mid_2, grad_tmp, accum_grad)
+        ctx.free(x_mid_2)
+
+        grad_tmp.zero_(ctx)
+        self.self_attn.backward(ctx,
+            x_mid_1, x_mid_1, mask_x, bias_self, accum_grad,
+            grad_tmp, grad_tmp
+        )
+        ctx.free(x_mid_1)
+
+        self.ln_attn.backward(ctx, x, grad_tmp, accum_grad)
+        ctx.free(grad_tmp)
 
 class DecoderBlockWithCrossAttention(Layer):
     def __init__(self, 
@@ -270,3 +360,79 @@ class DecoderBlockWithCrossAttention(Layer):
         )
         ctx.free(x_mid)
     
+    def backward(self,
+            ctx : Context,
+            x : Tensor,                 # (batch, dim_model, seq_q)
+            encoder_output : Tensor,    # (batch, dim_model, seq_k)
+            mask_x : Tensor,            # (batch, seq_q, seq_q)
+            mask_cross : Tensor,        # (batch, seq_k, seq_q)
+            bias_self : Optional[Tensor],   # (num_heads, seq_q, seq_q)
+            bias_cross: Optional[Tensor],   # (num_heads, seq_k, seq_q)
+            accum_grad : Tensor,
+            encoder_grad : Tensor
+        ):
+        batch, dim_model, seq_len = x.shape
+
+        x_mid_1 = ctx.allocate((batch, dim_model, seq_len), np.float16)
+
+        self.ln_attn.forward(ctx, x, x_mid_1)
+
+        x_mid_2 = ctx.allocate((batch, dim_model, seq_len), np.float16)
+        self.self_attn.forward(
+            ctx, x_mid_1, x_mid_1, mask_x, bias_self, x_mid_2
+        )
+        
+        ck.arith_element_add(
+            batch, dim_model * seq_len,
+            x.ptr, x_mid_2.ptr,
+            x_mid_2.ptr,
+            ctx.current_stream
+        )
+
+        x_mid_3 = ctx.allocate((batch, dim_model, seq_len), np.float16)
+        self.ln_cross_attn.forward(ctx, x_mid_2, x_mid_3)
+
+        x_mid_4 = ctx.allocate((batch, dim_model, seq_len), np.float16)
+        self.cross_attn.forward(
+            ctx, x_mid_3, encoder_output, mask_cross, bias_cross, x_mid_4
+        )
+        ck.arith_element_add(
+            batch, dim_model * seq_len,
+            x_mid_2.ptr, x_mid_4.ptr,
+            x_mid_4.ptr,
+            ctx.current_stream
+        )
+
+        x_mid_5 = ctx.allocate((batch, dim_model, seq_len), np.float16)
+        self.ln_ff.forward(ctx, x_mid_4, x_mid_5)
+
+        # start backward
+
+        grad_tmp = ctx.allocate((batch, dim_model, seq_len), np.float16)
+
+        grad_tmp.zero_(ctx)
+        self.ff.backward(ctx, x_mid_5, accum_grad, grad_tmp)
+        ctx.free(x_mid_5)
+        
+        self.ln_ff.backward(ctx, x_mid_4, grad_tmp, accum_grad)
+        ctx.free(x_mid_4)
+
+        grad_tmp.zero_(ctx)
+        self.cross_attn.backward(
+            ctx, x_mid_3, encoder_output, mask_cross, bias_cross, 
+            accum_grad, grad_tmp, encoder_grad
+        )
+        ctx.free(x_mid_3)
+        
+        self.ln_cross_attn.backward(ctx, x_mid_2, grad_tmp, accum_grad)
+        ctx.free(x_mid_2)
+
+        grad_tmp.zero_(ctx)
+        self.self_attn.backward(
+            ctx, x_mid_1, x_mid_1, mask_x, bias_self,
+            accum_grad, grad_tmp, grad_tmp
+        )
+        ctx.free(x_mid_1)
+
+        self.ln_attn.backward(ctx, x, grad_tmp, accum_grad)
+        ctx.free(grad_tmp)

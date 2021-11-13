@@ -10,6 +10,8 @@ class Tensor:
         self.__shape = shape
         self.__memory = memory
         self.__dtype = dtype
+        self.__nbytes = int(np.prod(shape)) * dtype.itemsize
+        self._released = False
     
     @property
     def device_id(self):
@@ -25,6 +27,8 @@ class Tensor:
 
     @property
     def ptr(self):
+        if self._released:
+            raise RuntimeError("Tensor has been released")
         return self.__memory.ptr
     
     @property
@@ -52,3 +56,28 @@ class Tensor:
         tmp = np.empty(self.__shape, dtype=self.__dtype)
         cudart.cudaMemcpy(tmp.ctypes.data, self.ptr, tmp.nbytes, cudart.cudaMemcpyDeviceToHost)
         return f"Tensor(shape={self.__shape}, dtype={self.__dtype}, device={self.__memory.device})\n" + str(tmp)
+    
+    @property
+    def nbytes(self):
+        return self.__nbytes
+
+    @staticmethod
+    def from_numpy(ctx, numpy_array : np.ndarray) -> "Tensor":
+        if not numpy_array.flags["C_CONTIGUOUS"]:
+            numpy_array = np.ascontiguousarray(numpy_array)
+        tensor = ctx.allocate(numpy_array.shape, numpy_array.dtype)
+        cudart.cudaMemcpy(
+            tensor.ptr,
+            numpy_array.ctypes.data,
+            numpy_array.nbytes,
+            cudart.cudaMemcpyHostToDevice
+        )
+        return tensor
+    
+    def zero_(self, ctx):
+        cudart.cudaMemsetAsync(
+            self.ptr,
+            0,
+            self.__nbytes,
+            ctx.current_stream
+        )
