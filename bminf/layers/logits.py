@@ -33,7 +33,7 @@ class OutputLogits(Layer):
         batch, dim_model = x.shape
         assert x_out.shape == (batch, self.vocab_size)
 
-        ck.gemv_broadcast_mat_fp16(
+        ck.gemv_broadcast_mat_fp16_light(
             batch, self.vocab_size, dim_model,
             self.weight.value.ptr,
             x.ptr,

@@ -188,7 +188,7 @@ class Attention(Layer):
             ctx.free(h_v)
         
         attn_score = ctx.allocate((batch, self.num_heads, kv_buffer_len), np.float16)
-        ck.gemv_fp16(
+        ck.gemv_fp16_light(
             batch * self.num_heads, kv_buffer_len, self.dim_head,
             past_k.ptr, h_q.ptr,
             attn_score.ptr,
@@ -217,7 +217,7 @@ class Attention(Layer):
             ctx.current_stream
         )
         attn_out = ctx.allocate((batch, self.num_heads  * self.dim_head), np.float16)
-        ck.gemv_fp16_transpose(
+        ck.gemv_fp16_transpose_light(
             batch * self.num_heads, self.dim_head, kv_buffer_len,
             past_v.ptr, attn_score.ptr,
             attn_out.ptr,

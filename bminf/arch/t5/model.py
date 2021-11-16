@@ -1,4 +1,4 @@
-from typing import List, Optional, Tuple
+from typing import List, Optional
 from cpm_kernels.library import cudart
 from .config import T5Configuration
 from ...core import Model, Layer, Context, Tensor, Device
@@ -9,6 +9,23 @@ from ... import data
 from .tokenizer import T5Tokenizer
 from ..scheduler import LayerScheduler
 import numpy as np
+import logging
+
+logger = logging.getLogger(__name__)
+
+def calc_fixed_layers(total_layers, max_fixed):
+    max_fixed = min(max_fixed, total_layers)
+    scheduled_layers = total_layers - max_fixed
+    vals = [(i + 1) * scheduled_layers // total_layers for i in range(total_layers)]
+    ret = []
+    last_v = 0
+    for i, v in enumerate(vals):
+        if v == last_v:
+            ret.append(i)
+        else:
+            last_v = v
+    return ret
+
 
 class T5Model(Model):
     def __init__(self, config : T5Configuration):
@@ -19,6 +36,7 @@ class T5Model(Model):
             self.config.DEVICE = cudart.cudaGetDevice()
 
         device = Device(self.config.DEVICE)
+        self.device = device
         self.allocator = CUDAAllocator(self.config.DEVICE)
 
         self.num_enc = config.NUM_ENCODER_LAYERS
@@ -46,9 +64,7 @@ class T5Model(Model):
 
         if config.MODEL_NAME is not None:
             
-
             fixed_size = sum([x.nbytes for x in fixed_layers])
-
             if config.MEMORY_LIMIT is None:
                 with device:
                     config.MEMORY_LIMIT = min(cudart.cudaMemGetInfo()[0], self.nbytes)
@@ -59,33 +75,57 @@ class T5Model(Model):
             if max_layers_in_memory < 2:
                 raise RuntimeError("CUDA out of memory: at least %d" % (self.max_block_nbytes * 2))
             
-            on_device_enc_layers = min((max_layers_in_memory - 2) // 2, self.num_enc)
-            on_device_dec_layers = min(max_layers_in_memory - 2 - on_device_enc_layers, self.num_dec)
+            swap_buffers = 2
+            if max_layers_in_memory >= self.num_enc + self.num_dec:
+                swap_buffers = 0
+
+            num_swapable_layers = max(self.num_enc + self.num_dec - (max_layers_in_memory - swap_buffers), 0)
+            num_dec_swapable_layers = num_swapable_layers // 3              # fewer swapable layers make decoder faster
+            num_enc_swapable_layers = num_swapable_layers - num_dec_swapable_layers
+            if num_enc_swapable_layers > self.num_enc:
+                num_dec_swapable_layers += num_enc_swapable_layers - self.num_enc
+                num_enc_swapable_layers = self.num_enc
+            
+            assert num_enc_swapable_layers <= self.num_enc
+            assert num_dec_swapable_layers <= self.num_dec
+
+            num_fixed_enc_layers = self.num_enc - num_enc_swapable_layers
+            num_fixed_dec_layers = self.num_dec - num_dec_swapable_layers
+             
+            logger.info("========= T5 ==========")
+            logger.info("Total layers: %d" , self.num_enc + self.num_dec)
+            logger.info("OnDev layers: %d", max_layers_in_memory)
+            logger.info("Fixed enc: %s", calc_fixed_layers(self.num_enc, num_fixed_enc_layers) )
+            logger.info("Fixed dec: %s", calc_fixed_layers(self.num_dec, num_fixed_dec_layers) )
+
+            for layer_id in calc_fixed_layers(self.num_enc, num_fixed_enc_layers):
+                self.enc_layers[layer_id].is_fixed = True
+            for layer_id in calc_fixed_layers(self.num_dec, num_fixed_dec_layers):
+                self.dec_layers[layer_id].is_fixed = True
+            
 
             for layer in fixed_layers:
                 layer.init_data(pinned=False)
             
             for i in range(self.num_enc):
-                if i < on_device_enc_layers:
+                if self.enc_layers[i].is_fixed:
                     self.enc_layers[i].init_data(pinned=False)
-                    self.enc_layers[i].is_fixed = True
                 else:
                     self.enc_layers[i].init_data(pinned=True)
-                    self.enc_layers[i].is_fixed = False
                 self.enc_layers[i].locked = False
                 self.enc_layers[i].on_device = False
-                self.enc_layers[i].loader_event = cudart.cudaEventCreate()
+                with device:
+                    self.enc_layers[i].loader_event = cudart.cudaEventCreate()
             
             for i in range(self.num_dec):
-                if i < on_device_dec_layers:
+                if self.dec_layers[i].is_fixed:
                     self.dec_layers[i].init_data(pinned=False)
-                    self.dec_layers[i].is_fixed = True
                 else:
                     self.dec_layers[i].init_data(pinned=True)
-                    self.dec_layers[i].is_fixed = False
                 self.dec_layers[i].locked = False
                 self.dec_layers[i].on_device = False
-                self.dec_layers[i].loader_event = cudart.cudaEventCreate()
+                with device:
+                    self.dec_layers[i].loader_event = cudart.cudaEventCreate()
             
             model_path = data.ensure_file(config.MODEL_NAME, "checkpoint.pt")
             vocab_path = data.ensure_file(config.MODEL_NAME, "vocab.txt")
@@ -94,35 +134,35 @@ class T5Model(Model):
             self.load( open(model_path, "rb") )
 
             for layer in fixed_layers:
-                device_ptr = self.allocator.allocate(layer.nbytes)
                 layer.is_fixed = True
                 layer.locked = False
                 layer.on_device = True
-
-                layer._to_device(device_ptr)
+                with device:
+                    device_ptr = self.allocator.allocate(layer.nbytes)
+                    layer._to_device(device_ptr)
                 layer.data = None
                 
-            for i in range(on_device_enc_layers):
-                device_ptr = self.allocator.allocate(self.enc_layers[i].nbytes)
-                self.enc_layers[i].is_fixed = True
-                self.enc_layers[i].locked = False
-                self.enc_layers[i].on_device = True
-
-                self.enc_layers[i]._to_device(device_ptr)
-                self.enc_layers[i].data = None
+            for i in range(self.num_enc):
+                if self.enc_layers[i].is_fixed:
+                    self.enc_layers[i].locked = False
+                    self.enc_layers[i].on_device = True
+                    with device:
+                        device_ptr = self.allocator.allocate(self.enc_layers[i].nbytes)
+                        self.enc_layers[i]._to_device(device_ptr)
+                    self.enc_layers[i].data = None
             
-            for i in range(on_device_dec_layers):
-                device_ptr = self.allocator.allocate(self.dec_layers[i].nbytes)
-                self.dec_layers[i].is_fixed = True
-                self.dec_layers[i].locked = False
-                self.dec_layers[i].on_device = True
-
-                self.dec_layers[i]._to_device(device_ptr)
-                self.dec_layers[i].data = None
+            for i in range(self.num_dec):
+                if self.dec_layers[i].is_fixed:
+                    self.dec_layers[i].locked = False
+                    self.dec_layers[i].on_device = True
+                    with device:
+                        device_ptr = self.allocator.allocate(self.dec_layers[i].nbytes)
+                        self.dec_layers[i]._to_device(device_ptr)
+                        self.dec_layers[i].data = None
             
-            
-            self.loader_stream = cudart.cudaStreamCreate()
-            self.scheduler = LayerScheduler(self.allocator, 2, self.max_block_nbytes, self.loader_stream)
+            with device:
+                self.loader_stream = cudart.cudaStreamCreate()
+                self.scheduler = LayerScheduler(self.allocator, 2, self.max_block_nbytes, self.loader_stream)
         else:
             # only init data
             for layer in fixed_layers:
@@ -131,8 +171,7 @@ class T5Model(Model):
                 self.enc_layers[i].init_data(pinned=False)
             for i in range(self.num_dec):
                 self.dec_layers[i].init_data(pinned=False)
-            
-        
+    
     def embedding(self, 
             ctx : Context, 
             ids : np.ndarray,       # (batch, seq_len)

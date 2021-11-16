@@ -16,5 +16,4 @@ class T5Configuration:
     ## runtime
     DEVICE = None
     MEMORY_LIMIT = None
-    DYNAMIC_MEMORY = 1024 * 1024 * 512
     MODEL_NAME = None

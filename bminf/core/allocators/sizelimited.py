@@ -28,8 +28,7 @@ def move_memory(dst : int, src : int, nbytes : int, stream : int):
     )
 
 class SizeLimitedAllocator(Allocator):
-    def __init__(self, base_ptr : Memory, stream : int) -> None:
-        
+    def __init__(self, base_ptr : Memory) -> None:
         self.__base_ptr = base_ptr.ptr
         self.__device = base_ptr.device
         self.__nbytes = base_ptr.nbytes
@@ -38,7 +37,6 @@ class SizeLimitedAllocator(Allocator):
         self.__peak = 0
 
         self.__mems : List[Memory] = [ Memory(self.__base_ptr + self.__nbytes, -1, 0) ]   # sentinel element
-        self.__stream = stream
     
     def _new_mem_pos(self, ptr : int, nbytes : int, pos : int) -> Memory:
         mem = Memory(ptr, nbytes, self.__device)
@@ -49,7 +47,7 @@ class SizeLimitedAllocator(Allocator):
 
         return mem
     
-    def allocate(self, nbytes: int) -> Memory:
+    def allocate(self, nbytes: int, stream = 0) -> Memory:
         if nbytes <= 0:
             return Memory(0, -2, 0)
 
@@ -81,7 +79,7 @@ class SizeLimitedAllocator(Allocator):
                 continue
             
             # compress memory
-            move_memory(curr_pos, mem.ptr, mem.nbytes, self.__stream)
+            move_memory(curr_pos, mem.ptr, mem.nbytes, stream)
             mem.ptr = curr_pos
             curr_pos = round_up(curr_pos + mem.nbytes, 512)
         
@@ -94,4 +92,17 @@ class SizeLimitedAllocator(Allocator):
 
         if len_before == len_after:
             raise RuntimeError("Memory is already freed")
+        
+        self.__used -= mem.nbytes
+    
+    def memory_stats(self):
+        return {
+            "active": len(self.__mems) - 1,
+            "used": self.__used,
+            "peak": self.__peak,
+        }
 
+    def free_all(self):
+        self.__mems = [ Memory(self.__base_ptr + self.__nbytes, -1, 0) ]   # sentinel element
+        self.__used = 0
+        self.__peak = 0

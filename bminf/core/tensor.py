@@ -81,3 +81,13 @@ class Tensor:
             self.__nbytes,
             ctx.current_stream
         )
+
+    def numpy(self):
+        ret = np.empty(self.__shape, dtype=self.__dtype)
+        cudart.cudaMemcpy(
+            ret.ctypes.data,
+            self.ptr,
+            ret.nbytes,
+            cudart.cudaMemcpyDeviceToHost
+        )
+        return ret

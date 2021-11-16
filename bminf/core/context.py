@@ -6,18 +6,15 @@ from cpm_kernels.library import cudart
 import numpy as np
 
 class Context:
-    requires_grad : bool
 
     def __init__(self, 
             device_idx : List[int], 
-            allocators : List[Allocator],
-            requires_grad : bool
+            allocators : List[Allocator]
         ) -> None:
 
         assert len(device_idx) > 0, "device_idx must be a non-empty list"
         assert len(device_idx) == len(allocators)
-
-        self.requires_grad = requires_grad
+        
         self.__devices = [
             Device(idx) for idx in device_idx
         ]
@@ -30,7 +27,6 @@ class Context:
             device_idx : allocator for device_idx, allocator in zip(device_idx, allocators)
         }
         
-
     def allocate(self, shape : int, dtype : np.dtype) -> Tensor:
         device = Device(cudart.cudaGetDevice())
         allocator = self.__allocators[device.idx]
@@ -39,13 +35,9 @@ class Context:
 
         itemsize = dtype.itemsize
         
-        size = 1
-        for dim in shape:
-            size *= dim
-        
-        nbytes = size * itemsize
+        nbytes = int(np.prod(shape) * itemsize)
 
-        mem = allocator.allocate(nbytes)
+        mem = allocator.allocate(nbytes, self.__calc_streams[device.idx])
         return Tensor(mem, shape, dtype)
 
     def free(self, tensor : Tensor):
@@ -60,3 +52,13 @@ class Context:
     def current_stream(self):
         device_idx = cudart.cudaGetDevice()
         return self.__calc_streams[device_idx]
+
+    def memory_stats(self):
+        ret = {}
+        for device_idx, allocator in self.__allocators.items():
+            ret[device_idx] = allocator.memory_stats()
+        return ret
+
+    def free_all(self):
+        for _, allocator in self.__allocators.items():
+            allocator.free_all()

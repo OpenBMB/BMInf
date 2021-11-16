@@ -100,6 +100,8 @@ class Linear(Layer):
             x_out.ptr,
             ctx.current_stream
         )
+        ctx.free(x_scale)
+        ctx.free(x_quant)
 
     def backward(self, ctx : Context, grad_output : Tensor, grad : Tensor):
         ## WARNING: backward function of Linear layer does not accumulate gradients

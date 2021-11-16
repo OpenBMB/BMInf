@@ -5,3 +5,4 @@ from .parameter import Parameter
 from .allocator import Allocator
 from .memory import Memory
 from .device import Device
+from . import config

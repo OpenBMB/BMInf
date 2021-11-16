@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from collections import OrderedDict
+from typing import List
 from ...utils import jieba
 
 class WordpieceTokenizer(object):
@@ -22,7 +23,7 @@ class WordpieceTokenizer(object):
         self.unk_token = unk_token
         self.max_input_chars_per_word = max_input_chars_per_word
 
-    def tokenize(self, word):
+    def tokenize(self, word) -> List[str]:
         if len(word) > self.max_input_chars_per_word:
             return [self.unk_token]
 
