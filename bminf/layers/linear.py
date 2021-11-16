@@ -76,11 +76,27 @@ class Linear(Layer):
         batch, hidden_size = x.shape
         assert x.shape == (batch, self.in_features) and x.dtype == np.float16
         assert x_out.shape == (batch, self.out_features) and x_out.dtype == np.float16
+
+        x_scale = ctx.allocate((batch,), np.float16)
+        x_quant = ctx.allocate((batch, hidden_size), np.int8)
+        ck.gemv_calc_scale(
+            batch, hidden_size,
+            x.ptr, 
+            x_scale.ptr,
+            ctx.current_stream
+        )
+        ck.gemv_round(
+            batch, hidden_size,
+            x.ptr, x_scale.ptr,
+            x_quant.ptr,
+            ctx.current_stream
+        )
         ck.gemv_broadcast_mat_int8(
             batch, self.out_features, hidden_size,
             self.scale.value.ptr,
             self.weight.value.ptr,
-            x.ptr,
+            x_scale.ptr,
+            x_quant.ptr,
             x_out.ptr,
             ctx.current_stream
         )

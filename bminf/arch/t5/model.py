@@ -176,7 +176,6 @@ class T5Model(Model):
                 tensor_mask,
                 x
             )
-            print(x)
         
         self.ln_enc.forward(ctx, x, x)
         ctx.free(tensor_mask)
@@ -377,7 +376,6 @@ class T5Model(Model):
         grad.zero_(ctx)
         self.ln_enc.backward(ctx, layer_output, grad_output, grad)
 
-        cnt = self.num_enc - 1
         for layer, layer_input in zip(self.scheduler.loop_layers(
             ctx,
             self.enc_layers,
@@ -390,8 +388,6 @@ class T5Model(Model):
                 tensor_mask,
                 grad
             )
-            print("Backward Encoder Layer %d" % cnt); cnt -= 1
-            print(grad)
         ctx.free(position_bias)
         ctx.free(tensor_mask)
     
@@ -432,7 +428,6 @@ class T5Model(Model):
         self.ln_dec.backward(ctx, layer_output, tmp_grad, grad)
         ctx.free(tmp_grad)
 
-        cnt = self.num_dec - 1
         for layer, layer_input in zip(self.scheduler.loop_layers(
             ctx,
             self.dec_layers,
@@ -448,8 +443,6 @@ class T5Model(Model):
                 None,
                 grad, grad_encoder
             )
-            print("Backward Decoder Layer %d" % cnt); cnt -= 1
-            print(grad)
         ctx.free(position_bias)
         ctx.free(tensor_mask_self_attn)
         ctx.free(tensor_mask_cross_attn)
