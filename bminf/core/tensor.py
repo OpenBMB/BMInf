@@ -24,6 +24,9 @@ class Tensor:
     @property
     def dtype(self):
         return self.__dtype
+    
+    def copy_(self, ctx, other : 'Tensor'):
+        cudart.cudaMemcpyAsync(self.ptr, other.ptr, other.nbytes, cudart.cudaMemcpyDeviceToDevice, ctx.current_stream)
 
     @property
     def ptr(self):

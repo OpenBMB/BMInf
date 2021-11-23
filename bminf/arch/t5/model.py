@@ -1,31 +1,16 @@
 from typing import List, Optional
-from cpm_kernels.library import cudart
 from .config import T5Configuration
 from ...core import Model, Layer, Context, Tensor, Device
 from ...core.allocators.cuda import CUDAAllocator
 from ...layers import LayerList, EncoderBlock, DecoderBlockWithCrossAttention
-from ...layers import  Embedding, Layernorm, PositionEmbedding, OutputLogits
+from ...layers import  Embedding, Layernorm, PositionEmbedding
 from ... import data
 from .tokenizer import T5Tokenizer
-from ..scheduler import LayerScheduler
+from ..scheduler import LayerScheduler, calc_fixed_layers
 import numpy as np
 import logging
 
 logger = logging.getLogger(__name__)
-
-def calc_fixed_layers(total_layers, max_fixed):
-    max_fixed = min(max_fixed, total_layers)
-    scheduled_layers = total_layers - max_fixed
-    vals = [(i + 1) * scheduled_layers // total_layers for i in range(total_layers)]
-    ret = []
-    last_v = 0
-    for i, v in enumerate(vals):
-        if v == last_v:
-            ret.append(i)
-        else:
-            last_v = v
-    return ret
-
 
 class T5Model(Model):
     def __init__(self, config : T5Configuration):
@@ -33,11 +18,11 @@ class T5Model(Model):
 
         self.config = config
         if self.config.DEVICE is None:
-            self.config.DEVICE = cudart.cudaGetDevice()
-
-        device = Device(self.config.DEVICE)
+            device = Device.current()
+        else:
+            device = Device(self.config.DEVICE)
         self.device = device
-        self.allocator = CUDAAllocator(self.config.DEVICE)
+        self.allocator = CUDAAllocator(self.device.idx)
 
         self.num_enc = config.NUM_ENCODER_LAYERS
         self.num_dec = config.NUM_DECODER_LAYERS
@@ -55,7 +40,7 @@ class T5Model(Model):
         self.ln_dec = Layernorm(config.DIM_MODEL, self.eps, bias=False)
 
         self.input_embedding = Embedding(config.VOCAB_SIZE, config.DIM_MODEL)
-        self.output_embedding = OutputLogits(config.VOCAB_SIZE, config.DIM_MODEL)
+        self.output_embedding = Embedding(config.VOCAB_SIZE, config.DIM_MODEL)
 
         self.position_bias_enc = PositionEmbedding(config.NUM_HEADS, config.NUM_POSITION_BUCKETS, config.MAX_DISTANCE, bidirectional=True)
         self.position_bias_dec = PositionEmbedding(config.NUM_HEADS, config.NUM_POSITION_BUCKETS, config.MAX_DISTANCE, bidirectional=False)
@@ -66,14 +51,13 @@ class T5Model(Model):
             
             fixed_size = sum([x.nbytes for x in fixed_layers])
             if config.MEMORY_LIMIT is None:
-                with device:
-                    config.MEMORY_LIMIT = min(cudart.cudaMemGetInfo()[0], self.nbytes)
+                config.MEMORY_LIMIT = min(device.free_memory, self.nbytes)
             
             layers_memory_limit = config.MEMORY_LIMIT - fixed_size
             max_layers_in_memory = layers_memory_limit // self.max_block_nbytes
 
             if max_layers_in_memory < 2:
-                raise RuntimeError("CUDA out of memory: at least %d" % (self.max_block_nbytes * 2))
+                raise RuntimeError("CUDA Error: out of memory: at least %d" % (self.max_block_nbytes * 2))
             
             swap_buffers = 2
             if max_layers_in_memory >= self.num_enc + self.num_dec:
@@ -114,8 +98,7 @@ class T5Model(Model):
                     self.enc_layers[i].init_data(pinned=True)
                 self.enc_layers[i].locked = False
                 self.enc_layers[i].on_device = False
-                with device:
-                    self.enc_layers[i].loader_event = cudart.cudaEventCreate()
+                self.enc_layers[i].loader_event = device.create_event()
             
             for i in range(self.num_dec):
                 if self.dec_layers[i].is_fixed:
@@ -124,8 +107,7 @@ class T5Model(Model):
                     self.dec_layers[i].init_data(pinned=True)
                 self.dec_layers[i].locked = False
                 self.dec_layers[i].on_device = False
-                with device:
-                    self.dec_layers[i].loader_event = cudart.cudaEventCreate()
+                self.dec_layers[i].loader_event = device.create_event()
             
             model_path = data.ensure_file(config.MODEL_NAME, "checkpoint.pt")
             vocab_path = data.ensure_file(config.MODEL_NAME, "vocab.txt")
@@ -161,7 +143,7 @@ class T5Model(Model):
                         self.dec_layers[i].data = None
             
             with device:
-                self.loader_stream = cudart.cudaStreamCreate()
+                self.loader_stream = device.create_stream()
                 self.scheduler = LayerScheduler(self.allocator, 2, self.max_block_nbytes, self.loader_stream)
         else:
             # only init data
@@ -179,7 +161,7 @@ class T5Model(Model):
         ):
         tensor_ids = Tensor.from_numpy(ctx, ids)
 
-        self.input_embedding.forward(ctx, tensor_ids, x_out)
+        self.input_embedding.embedding_forward(ctx, tensor_ids, x_out)
         ctx.free(tensor_ids)
     
     def embedding_step(self,
@@ -189,7 +171,7 @@ class T5Model(Model):
         ):
         tensor_ids = Tensor.from_numpy(ctx, ids)
 
-        self.input_embedding.step(ctx, tensor_ids, x_out)
+        self.input_embedding.embedding_step(ctx, tensor_ids, x_out)
         ctx.free(tensor_ids)
 
 
@@ -255,7 +237,7 @@ class T5Model(Model):
             )
         
         self.ln_dec.forward(ctx, decoder_input, decoder_input)
-        self.output_embedding.forward(ctx, decoder_input, decoder_output)
+        self.output_embedding.projection_forward(ctx, decoder_input, decoder_output)
         ctx.free(tensor_mask_self_attn)
         ctx.free(tensor_mask_cross_attn)
         ctx.free(position_bias)
@@ -309,7 +291,7 @@ class T5Model(Model):
                 step_input
             )
         self.ln_dec.step(ctx, step_input, step_input)
-        self.output_embedding.step(ctx, step_input, step_out)
+        self.output_embedding.projection_step(ctx, step_input, step_out)
         ctx.free(tensor_mask_self_attn)
         ctx.free(tensor_mask_cross_attn)
         ctx.free(position_bias)
@@ -341,7 +323,7 @@ class T5Model(Model):
                 tensor_mask,
                 x
             )
-            cudart.cudaMemcpyAsync(hidden_buffer.ptr, x.ptr, x.nbytes, cudart.cudaMemcpyDeviceToDevice, ctx.current_stream)
+            hidden_buffer.copy_(ctx, x)
         
         self.ln_enc.forward(ctx, x, x)
         ctx.free(tensor_mask)
@@ -385,10 +367,10 @@ class T5Model(Model):
                 None,
                 decoder_input
             )
-            cudart.cudaMemcpyAsync(hidden_buffer.ptr, decoder_input.ptr, decoder_input.nbytes, cudart.cudaMemcpyDeviceToDevice, ctx.current_stream)
+            hidden_buffer.copy_(ctx, decoder_input)
         
         self.ln_dec.forward(ctx, decoder_input, decoder_input)
-        self.output_embedding.forward(ctx, decoder_input, decoder_output)
+        self.output_embedding.projection_forward(ctx, decoder_input, decoder_output)
         ctx.free(tensor_mask_self_attn)
         ctx.free(tensor_mask_cross_attn)
         ctx.free(position_bias)
@@ -463,7 +445,7 @@ class T5Model(Model):
         layer_output = hidden_list[-1]
         tmp_grad = ctx.allocate((batch, dim_model, seq_q), dtype=np.float16)
         tmp_grad.zero_(ctx)
-        self.output_embedding.backward(ctx, grad_output, tmp_grad)
+        self.output_embedding.projection_backward(ctx, grad_output, tmp_grad)
         self.ln_dec.backward(ctx, layer_output, tmp_grad, grad)
         ctx.free(tmp_grad)
 

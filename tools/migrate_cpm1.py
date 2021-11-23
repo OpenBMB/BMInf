@@ -1,30 +1,41 @@
 import torch
 import numpy as np
-from bminf.models.cpm1 import CPM1, CPM1Configuration
-from bminf.parameter import Parameter
-from bminf.layers.transformer_block import TransformerBlockGPT
+from bminf.core import Parameter
+from bminf.arch import GPT2Model, GPTConfiguration 
+from bminf.layers.transformer_block import DecoderBlock
+import cpm_kernels.kernels as ck
 
 device = torch.device("cuda:0")
 
-def build_parameter(name, parameter : Parameter, ckpt):
-    tensor = ckpt[name]
+
+def build_parameter(tensor, parameter : Parameter):
     tp = parameter.dtype
     v = tensor.cpu().numpy().astype(tp)
     shape = v.shape
-    if np.issubdtype(parameter.dtype, np.integer):
-        raise TypeError("%s has low precision" % name)
     parameter.put_data(shape, v.tobytes(), tp)
 
-def scale_build_parameter(name, value : Parameter, scale : Parameter, axis, ckpt):
-    tensor = ckpt[name].to(device)
-    # v = tensor.numpy().astype(np.float16)
-    scale_v = torch.max(tensor.abs(), dim=axis, keepdim=True)[0] / 127
+def scale_build_parameter(tensor : torch.Tensor, value : Parameter, scale : Parameter):
+    tensor = tensor.to(device).half()
+    n, m = tensor.size()
 
-    qv = torch.round(tensor / scale_v).type(torch.int8)
-    scale_v = scale_v.type(torch.float16)
+    scale_v = torch.empty((n,), dtype=torch.float16, device=device)
+    ck.gemm_calc_scale(
+        1, n, m,
+        tensor.data_ptr(),
+        scale_v.data_ptr(),
+        torch.cuda.current_stream()
+    )
+    quant_v = torch.empty((n, m), dtype=torch.int8, device=device)
+    ck.gemm_round(
+        1, n, m,
+        tensor.data_ptr(),
+        scale_v.data_ptr(),
+        quant_v.data_ptr(),
+        torch.cuda.current_stream()
+    )
 
-    qv = qv.cpu().numpy().astype(np.int8)
     scale_v = scale_v.cpu().numpy().astype(np.float16)
+    qv = quant_v.cpu().numpy().astype(np.int8)
 
     value.put_data(qv.shape, qv.tobytes(), qv.dtype)
     scale.put_data(scale_v.shape, scale_v.tobytes(), scale_v.dtype)
@@ -37,42 +48,47 @@ def split(x, s):
     sizes = [s, sizes[0] // s ] + sizes[1:]
     return x.reshape(*sizes)
 
-def build_block(ckpt, model : TransformerBlockGPT, prefix):
-    build_parameter(f"{prefix}.input_layernorm.weight", model.layer_nrom_before_self_attn.weight, ckpt)
-    build_parameter(f"{prefix}.input_layernorm.bias", model.layer_nrom_before_self_attn.bias, ckpt)
+def build_block(ckpt, model : DecoderBlock, prefix):
+    build_parameter(ckpt[f"{prefix}.input_layernorm.weight"], model.ln_attn.weight)
+    build_parameter(ckpt[f"{prefix}.input_layernorm.bias"], model.ln_attn.bias)
 
-    ckpt[f"{prefix}.attention.query_key_value.weight"] = split(ckpt[f"{prefix}.attention.query_key_value.weight"], 3)
-    ckpt[f"{prefix}.attention.query_key_value.bias"] = split(ckpt[f"{prefix}.attention.query_key_value.bias"], 3)
-    scale_build_parameter(f"{prefix}.attention.query_key_value.weight", model.self_attention.w_project_qkv, model.self_attention.w_project_qkv_scale, -1, ckpt)
-    build_parameter(f"{prefix}.attention.query_key_value.bias", model.self_attention.w_project_bias, ckpt)
-    scale_build_parameter(f"{prefix}.attention.dense.weight", model.self_attention.w_out, model.self_attention.w_out_scale, 1, ckpt)
-    build_parameter(f"{prefix}.attention.dense.bias", model.self_attention.w_out_bias, ckpt)
+    split_attn_weight = split(ckpt[f"{prefix}.attention.query_key_value.weight"], 3)
+    split_attn_bias = split(ckpt[f"{prefix}.attention.query_key_value.bias"], 3)
+    scale_build_parameter(split_attn_weight[0], model.self_attn.project_q.weight, model.self_attn.project_q.scale)
+    scale_build_parameter(split_attn_weight[1], model.self_attn.project_k.weight, model.self_attn.project_k.scale)
+    scale_build_parameter(split_attn_weight[2], model.self_attn.project_v.weight, model.self_attn.project_v.scale)
+    build_parameter(split_attn_bias[0], model.self_attn.project_q.bias)
+    build_parameter(split_attn_bias[1], model.self_attn.project_k.bias)
+    build_parameter(split_attn_bias[2], model.self_attn.project_v.bias)
 
-    build_parameter(f"{prefix}.post_attention_layernorm.weight", model.layer_nrom_before_ff.weight, ckpt)
-    build_parameter(f"{prefix}.post_attention_layernorm.bias", model.layer_nrom_before_ff.bias, ckpt)
-    scale_build_parameter(f"{prefix}.mlp.dense_h_to_4h.weight", model.dense_gelu_dense.wi.weight, model.dense_gelu_dense.wi.weight_scale, 1, ckpt)
-    build_parameter(f"{prefix}.mlp.dense_h_to_4h.bias", model.dense_gelu_dense.wi.weight_bias, ckpt)
-    scale_build_parameter(f"{prefix}.mlp.dense_4h_to_h.weight", model.dense_gelu_dense.wo.weight, model.dense_gelu_dense.wo.weight_scale, 1, ckpt)
-    build_parameter(f"{prefix}.mlp.dense_4h_to_h.bias", model.dense_gelu_dense.wo.weight_bias, ckpt)
+    scale_build_parameter(ckpt[f"{prefix}.attention.dense.weight"], model.self_attn.linear_out.weight, model.self_attn.linear_out.scale)
+    build_parameter(ckpt[f"{prefix}.attention.dense.bias"], model.self_attn.linear_out.bias)
 
-def build_layers(ckpt, model : CPM1):
+    build_parameter(ckpt[f"{prefix}.post_attention_layernorm.weight"], model.ln_ff.weight)
+    build_parameter(ckpt[f"{prefix}.post_attention_layernorm.bias"], model.ln_ff.bias)
+    scale_build_parameter(ckpt[f"{prefix}.mlp.dense_h_to_4h.weight"], model.ff.linear_in.weight, model.ff.linear_in.scale)
+    build_parameter(ckpt[f"{prefix}.mlp.dense_h_to_4h.bias"], model.ff.linear_in.bias)
+    scale_build_parameter(ckpt[f"{prefix}.mlp.dense_4h_to_h.weight"], model.ff.linear_out.weight, model.ff.linear_out.scale)
+    build_parameter(ckpt[f"{prefix}.mlp.dense_4h_to_h.bias"], model.ff.linear_out.bias)
+
+def build_layers(ckpt, model : GPT2Model):
     for i in range(model.num_layers):
         build_block(ckpt, model.layers[i], f"transformer.layers.{i}")
 
 
-def build_model(ckpt, model : CPM1):
-    build_parameter("word_embeddings.weight", model.input_embedding.weight, ckpt) 
-    build_parameter("position_embeddings.weight", model.position_embedding.weight, ckpt)
-    build_parameter("transformer.final_layernorm.weight", model.encoder_final_layer_nrom.weight, ckpt)
-    build_parameter("transformer.final_layernorm.bias", model.encoder_final_layer_nrom.bias, ckpt)
+def build_model(ckpt, model : GPT2Model):
+    build_parameter(ckpt["word_embeddings.weight"], model.token_embedding.weight) 
+    build_parameter(ckpt["position_embeddings.weight"], model.position_embedding.weight)
+    build_parameter(ckpt["transformer.final_layernorm.weight"], model.layernorm.weight)
+    build_parameter(ckpt["transformer.final_layernorm.bias"], model.layernorm.bias)
 
     build_layers(ckpt, model)
 
 def main():
     model = torch.load("merge.pt")
-    config = CPM1Configuration()
+    config = GPTConfiguration()
     config.MODEL_NAME = None
-    cpm1 = CPM1(config=config)
+    cpm1 = GPT2Model(config=config)
     build_model(model, cpm1)
     cpm1.dump(open("checkpoint.pt", "wb"))
 

@@ -52,3 +52,33 @@ class Device:
     @property
     def idx(self):
         return self.__device.idx
+    
+    @staticmethod
+    def current():
+        return Device(cudart.cudaGetDevice())
+    
+    @property
+    def free_memory(self):
+        with self:
+            return cudart.cudaMemGetInfo()[0]
+    
+    @property
+    def total_memory(self):
+        with self:
+            return cudart.cudaMemGetInfo()[1]
+    
+    def create_event(self):
+        with self:
+            return cudart.cudaEventCreate()
+    
+    def create_stream(self):
+        with self:
+            return cudart.cudaStreamCreate()
+    
+    def destroy_event(self, evt):
+        with self:
+            return cudart.cudaEventDestroy(evt)
+    
+    def destroy_stream(self, stream):
+        with self:
+            return cudart.cudaStreamDestroy(stream)

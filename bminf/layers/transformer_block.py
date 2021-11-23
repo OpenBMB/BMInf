@@ -10,12 +10,12 @@ from .feedforward import FeedForward
 class EncoderBlock(Layer):
     def __init__(self, 
             dim_model : int, num_heads : int, dim_head : int, dim_ff : int,
-            eps : float, bias : bool = False, gated : bool = True
+            eps : float, bias : bool = False, gated : bool = True, attn_scale : float = 1
         ):
         super().__init__()
 
         self.ln_attn = Layernorm(dim_model, eps, bias)
-        self.self_attn = Attention(dim_model, num_heads, dim_head, bias)
+        self.self_attn = Attention(dim_model, num_heads, dim_head, bias, attn_scale=attn_scale)
 
         self.ln_ff = Layernorm(dim_model, eps, bias)
         self.ff = FeedForward(dim_model, dim_ff, bias, gated)
@@ -97,12 +97,12 @@ class EncoderBlock(Layer):
 class DecoderBlock(Layer):
     def __init__(self, 
             dim_model : int, num_heads : int, dim_head : int, dim_ff : int,
-            eps : float, bias : bool = False, gated : bool = True
+            eps : float, bias : bool = False, gated : bool = True, attn_scale : float = 1,
         ):
         super().__init__()
 
         self.ln_attn = Layernorm(dim_model, eps, bias)
-        self.self_attn = Attention(dim_model, num_heads, dim_head, bias)
+        self.self_attn = Attention(dim_model, num_heads, dim_head, bias, attn_scale=attn_scale)
 
         self.ln_ff = Layernorm(dim_model, eps, bias)
         self.ff = FeedForward(dim_model, dim_ff, bias, gated)
@@ -113,12 +113,14 @@ class DecoderBlock(Layer):
             mask_x : Tensor,            # (batch, seq_q, seq_q)
             bias_self : Optional[Tensor],   # (num_heads, seq_q, seq_q)
             x_out : Tensor, 
+            key_out : Optional[Tensor] = None,      # (batch, num_head, seq_q, dim_head)
+            value_out : Optional[Tensor] = None,    # (batch, num_head, seq_q, dim_head)
         ):
         batch, dim_model, seq_len = x.shape
 
         x_mid = ctx.allocate(x.shape, x.dtype)
         self.ln_attn.forward(ctx, x, x_mid)
-        self.self_attn.forward(ctx, x_mid, x_mid, mask_x, bias_self, x_mid)
+        self.self_attn.forward(ctx, x_mid, x_mid, mask_x, bias_self, x_mid, key_out, value_out)
 
         ck.arith_element_add(
             batch, dim_model * seq_len,
@@ -231,15 +233,15 @@ class DecoderBlock(Layer):
 class DecoderBlockWithCrossAttention(Layer):
     def __init__(self, 
             dim_model : int, num_heads : int, dim_head : int, dim_ff : int,
-            eps : float, bias : bool = False, gated : bool = True
+            eps : float, bias : bool = False, gated : bool = True, attn_scale : float = 1
         ):
         super().__init__()
 
         self.ln_attn = Layernorm(dim_model, eps, bias)
-        self.self_attn = Attention(dim_model, num_heads, dim_head, bias)
+        self.self_attn = Attention(dim_model, num_heads, dim_head, bias, attn_scale=attn_scale)
 
         self.ln_cross_attn = Layernorm(dim_model, eps, bias)
-        self.cross_attn = Attention(dim_model, num_heads, dim_head, bias)
+        self.cross_attn = Attention(dim_model, num_heads, dim_head, bias, attn_scale=attn_scale)
 
         self.ln_ff = Layernorm(dim_model, eps, bias)
         self.ff = FeedForward(dim_model, dim_ff, bias, gated)

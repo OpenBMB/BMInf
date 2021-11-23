@@ -5,12 +5,13 @@ from cpm_kernels import kernels as ck
 from .linear import Linear
 
 class Attention(Layer):
-    def __init__(self, dim_model, num_heads, dim_head, bias=False) -> None:
+    def __init__(self, dim_model, num_heads, dim_head, bias=False, attn_scale : float = 1) -> None:
         super().__init__()
 
         self.dim_model = dim_model
         self.dim_head = dim_head
         self.num_heads = num_heads
+        self.attn_scale = attn_scale
 
 
         self.project_q = Linear(dim_model, dim_head * num_heads, bias=bias)
@@ -61,7 +62,13 @@ class Attention(Layer):
         )
         ctx.free(h_q)
         ctx.free(h_k)
-
+        ck.arith_global_scale(
+            batch * self.num_heads * seq_k * seq_q,
+            h_attn.ptr,
+            self.attn_scale,
+            h_attn.ptr,
+            ctx.current_stream
+        )
         if position_bias is not None:
             ck.arith_batch_add_forward(
                 batch, self.num_heads * seq_k * seq_q,
@@ -97,7 +104,7 @@ class Attention(Layer):
 
         h_v.reshape((batch * self.num_heads, self.dim_head, seq_k)) # (batch * num_heads, dim_head, seq_k)
 
-        attn_out = ctx.allocate((batch, self.dim_head * self.dim_head, seq_q), dtype=np.float16)
+        attn_out = ctx.allocate((batch, self.num_heads * self.dim_head, seq_q), dtype=np.float16)
 
 
         ck.gemm_fp16(
@@ -110,7 +117,6 @@ class Attention(Layer):
         )
         ctx.free(h_attn)
         ctx.free(h_v)
-
         self.linear_out.forward(ctx, attn_out, x_out)
         ctx.free(attn_out)
 
@@ -194,6 +200,13 @@ class Attention(Layer):
             attn_score.ptr,
             ctx.current_stream
         )
+        ck.arith_global_scale(
+            batch * self.num_heads * kv_buffer_len,
+            attn_score.ptr,
+            self.attn_scale,
+            attn_score.ptr,
+            ctx.current_stream
+        )
         ctx.free(h_q)
         if position_bias is not None:
             ck.arith_batch_add_forward(
@@ -261,6 +274,14 @@ class Attention(Layer):
             batch * self.num_heads, batch * self.num_heads,
             False, True,
             h_q.ptr, h_k.ptr,
+            h_attn.ptr,
+            ctx.current_stream
+        )
+
+        ck.arith_global_scale(
+            batch * self.num_heads * seq_k * seq_q,
+            h_attn.ptr,
+            self.attn_scale,
             h_attn.ptr,
             ctx.current_stream
         )
@@ -346,6 +367,14 @@ class Attention(Layer):
             grad_attn_score.ptr,
             ctx.current_stream
         )
+        ck.arith_global_scale(
+            batch * self.num_heads * seq_k * seq_q,
+            grad_attn_score.ptr,
+            self.attn_scale,
+            grad_attn_score.ptr,
+            ctx.current_stream
+        )
+
         grad_h_k = ctx.allocate((batch, self.num_heads * self.dim_head, seq_k), dtype=np.float16)
         ck.gemm_fp16(
             seq_k, seq_q, self.dim_head,

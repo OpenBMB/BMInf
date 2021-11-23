@@ -1,5 +1,3 @@
-import sys
-sys.path.insert(0, "/root/toolkit")
 from typing import Union
 import torch
 import numpy as np

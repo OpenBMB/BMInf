@@ -4,6 +4,20 @@ from ..core import Layer, Allocator, Memory, Context
 from ..layers.layer_list import LayerList
 from cpm_kernels.library import cudart
 
+def calc_fixed_layers(total_layers, max_fixed):
+    max_fixed = min(max_fixed, total_layers)
+    scheduled_layers = total_layers - max_fixed
+    vals = [(i + 1) * scheduled_layers // total_layers for i in range(total_layers)]
+    ret = []
+    last_v = 0
+    for i, v in enumerate(vals):
+        if v == last_v:
+            ret.append(i)
+        else:
+            last_v = v
+    return ret
+
+
 T = TypeVar("T", bound=Layer)
 class LayerScheduler:
     def __init__(self, allocator : Allocator, pool_size : int, layer_size : int, stream) -> None:

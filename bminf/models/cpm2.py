@@ -38,6 +38,7 @@ class CPM2:
         ) -> None:
         if version not in SUPPORTED_VERSION:
             raise RuntimeError("CPM2 version %s is not supported (requires %s)" % (version, SUPPORTED_VERSION))
+        # TODO: set model name here
         config = CPM2Configuration()
         if device_idx is None:
             device_idx = cudart.cudaGetDevice()
@@ -157,7 +158,7 @@ class CPM2:
                                 nw.ptr,
                                 self._ctx.current_stream
                             )
-                        self._ctx.free(buffer_k_self)
+                            self._ctx.free(old)
                     buffer_k_self = nw_buffer_k_self
 
                     nw_buffer_v_self = self._model.allocate_decode_buffer(self._ctx, 1, nw_buffer_len)
@@ -169,7 +170,7 @@ class CPM2:
                                 nw.ptr,
                                 self._ctx.current_stream
                             )
-                        self._ctx.free(buffer_v_self)
+                            self._ctx.free(old)
                     buffer_v_self = nw_buffer_v_self
                     buffer_len = nw_buffer_len
                 
@@ -294,7 +295,6 @@ class CPM2:
             [len(input_sentence)],
             189 # start from 189 span
         )
-        print(idx)
         res = self._gen_iter(
             idx,
             input_length,
@@ -321,7 +321,6 @@ class CPM2:
 
     def free(self):
         self._ctx.free_all()
-
 
         
 
