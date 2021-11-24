@@ -159,6 +159,7 @@ class T5Model(Model):
             ids : np.ndarray,       # (batch, seq_len)
             x_out : Tensor          # (batch, dim_model, seq_len)
         ):
+        assert ids.dtype == np.int32
         tensor_ids = Tensor.from_numpy(ctx, ids)
 
         self.input_embedding.embedding_forward(ctx, tensor_ids, x_out)
@@ -169,6 +170,7 @@ class T5Model(Model):
             ids : np.ndarray,       # (batch,)  int32
             x_out : Tensor          # (batch, dim_model)
         ):
+        assert ids.dtype == np.int32
         tensor_ids = Tensor.from_numpy(ctx, ids)
 
         self.input_embedding.embedding_step(ctx, tensor_ids, x_out)

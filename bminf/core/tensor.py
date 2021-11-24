@@ -9,7 +9,7 @@ class Tensor:
     def __init__(self, memory : Memory, shape : Tuple[int, ...], dtype : np.dtype) -> None:
         self.__shape = shape
         self.__memory = memory
-        self.__dtype = dtype
+        self.__dtype = np.dtype(dtype)
         self.__nbytes = int(np.prod(shape)) * dtype.itemsize
         self._released = False
     

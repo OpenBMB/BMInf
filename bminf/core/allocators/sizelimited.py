@@ -49,7 +49,7 @@ class SizeLimitedAllocator(Allocator):
     
     def allocate(self, nbytes: int, stream = 0) -> Memory:
         if nbytes <= 0:
-            return Memory(0, -2, 0)
+            return Memory(0, 0, self.__device)
 
         nbytes = round_up(nbytes, 512)  # CUDA 512 bytes aligned
 

@@ -4,6 +4,8 @@ from .device import Device
 from .allocator import Allocator
 from cpm_kernels.library import cudart
 import numpy as np
+import logging
+logger = logging.getLogger(__name__)
 
 class Context:
 
@@ -21,7 +23,7 @@ class Context:
         self.__calc_streams = {}
         for d in self.__devices:
             with d:
-                self.__calc_streams[d.idx] = cudart.cudaStreamCreate()
+                self.__calc_streams[d.idx] = cudart.cudaStreamCreate().value
 
         self.__allocators = {
             device_idx : allocator for device_idx, allocator in zip(device_idx, allocators)
@@ -62,3 +64,11 @@ class Context:
     def free_all(self):
         for _, allocator in self.__allocators.items():
             allocator.free_all()
+    
+    def __del__(self):
+        try:
+            self.free_all()
+            for stream in self.__calc_streams.values():
+                cudart.cudaStreamDestroy(stream)
+        except Exception:
+            logger.exception("Exception in Context.__del__")
