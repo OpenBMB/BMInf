@@ -258,7 +258,7 @@ class GPT2Model(Model):
             grad_output : Tensor,       # (batch, seq_len, vocab_size)
             grad : Tensor               # (batch. dim_model, seq_len)
         ):
-        batch, seq_len, vocab_size = x.shape
+        batch, seq_len, vocab_size = grad_output.shape
         assert len(hidden_list) == self.num_layers
         layer_inputs = [x] + hidden_list[:-1]
         layer_output = hidden_list[-1]
