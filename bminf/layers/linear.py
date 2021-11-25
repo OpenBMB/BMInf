@@ -123,7 +123,7 @@ class Linear(Layer):
         grad_i32 = ctx.allocate((batch, self.in_features, seq_len), dtype=np.int32)
         ck.gemm_int8(
             seq_len, self.out_features, self.in_features,
-            1, batch,
+            batch, 1,
             False, True,
             quant_G.ptr, self.weight.value.ptr, 
             grad_i32.ptr,
