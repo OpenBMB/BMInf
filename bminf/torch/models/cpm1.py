@@ -3,17 +3,20 @@ import numpy as np
 import torch
 from ..arch.gpt import TorchGPT2
 from ..utils import ResultClass
-from ...models.cpm1 import CPM1Configuration, SUPPORTED_VERSION
+from ...models.cpm1 import CPM1Configuration, SUPPORTED_VERSION, LATEST_VERSION
 
 class CPM1(TorchGPT2):
     def __init__(self,
             memory_limit : Optional[int] = None,
-            version : str = "1.1"
+            version : Optional[str] = None
         ) -> None:
+        if version is None:
+            version = LATEST_VERSION
         if version not in SUPPORTED_VERSION:
             raise RuntimeError("CPM1 version %s is not supported (requires %s)" % (version, SUPPORTED_VERSION))
-        # TODO: set model name here
+        
         config = CPM1Configuration()
+        config.MODEL_NAME = version
 
         device_idx = torch.cuda.current_device()
 

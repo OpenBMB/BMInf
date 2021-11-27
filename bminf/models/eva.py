@@ -29,13 +29,17 @@ class EVAConfiguration(T5Configuration):
     MODEL_NAME = None
 
 SUPPORTED_VERSION = ["eva-int8-new"]
+LATEST_VERSION = SUPPORTED_VERSION[-1]
+
 class EVA:
     def __init__(self,
             device_idx : Optional[int] = None,
             dynamic_memory : int = 512 * 1024 * 1024,   # 512MB
             memory_limit : Optional[int] = None,
-            version : str = "eva-int8-new"
+            version : Optional[str] = None
         ) -> None:
+        if version is None:
+            version = LATEST_VERSION
         if version not in SUPPORTED_VERSION:
             raise RuntimeError("EVA version %s is not supported (requires %s)" % (version, SUPPORTED_VERSION))
         config = EVAConfiguration()

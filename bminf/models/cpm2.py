@@ -25,13 +25,17 @@ class CPM2Configuration(T5Configuration):
 
 
 SUPPORTED_VERSION = ["cpm2.1-new"]
+LATEST_VERSION =  SUPPORTED_VERSION[-1]
+
 class CPM2:
     def __init__(self,
             device_idx : Optional[int] = None,
             dynamic_memory : int = 512 * 1024 * 1024,   # 512MB
             memory_limit : Optional[int] = None,
-            version : str = "cpm2.1-new"
+            version : Optional[str] = None
         ) -> None:
+        if version is None:
+            version = LATEST_VERSION
         if version not in SUPPORTED_VERSION:
             raise RuntimeError("CPM2 version %s is not supported (requires %s)" % (version, SUPPORTED_VERSION))
         config = CPM2Configuration()
