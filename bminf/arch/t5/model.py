@@ -210,7 +210,6 @@ class T5Model(Model):
             encoder_output : Tensor,        # (batch, dim_model, seq_k)
             decoder_mask : np.ndarray,      # (batch, dim_model, seq_q)
             encoder_mask : np.ndarray,      # (batch, dim_model, seq_k)
-            decoder_output : Tensor         # (batch, seq_q, vocab_size)
         ):
         assert decoder_input.shape[:2] == encoder_output.shape[:2]
         batch, dim_model, seq_q = decoder_input.shape
@@ -239,10 +238,12 @@ class T5Model(Model):
             )
         
         self.ln_dec.forward(ctx, decoder_input, decoder_input)
-        self.output_embedding.projection_forward(ctx, decoder_input, decoder_output)
         ctx.free(tensor_mask_self_attn)
         ctx.free(tensor_mask_cross_attn)
         ctx.free(position_bias)
+    
+    def projection(self, ctx : Context, hidden : Tensor, logits_out : Tensor):
+        self.output_embedding.projection_forward(ctx, hidden, logits_out)
 
     def allocate_decode_buffer(self, ctx : Context, batch : int, length : int) -> List[Tensor]:
         return [ 
@@ -255,7 +256,7 @@ class T5Model(Model):
             step_input : Tensor,                # (batch, dim_model)
             encoder_output : Optional[Tensor],  # (batch, dim_model, seq_k) # needed for step_pos == 0
             # mask_x is not needed
-            mask_encoder : Tensor,              # (batch, seq_k)
+            mask_encoder : np.ndarray,          # (batch, seq_k)
 
             buffer_k_self : List[Tensor],       # List[(batch, num_heads, buffer_len, dim_head)]
             buffer_v_self : List[Tensor],       # List[(batch, num_heads, buffer_len, dim_head)]
@@ -263,7 +264,6 @@ class T5Model(Model):
             buffer_v_cross : List[Tensor],      # List[(batch, num_heads, seq_k, dim_head)]
 
             step_pos : int,
-            step_out : Tensor,                  # (batch, vocab_size)
         ):
         batch = step_input.shape[0]
         buffer_len = buffer_k_self[0].shape[2]
@@ -293,10 +293,12 @@ class T5Model(Model):
                 step_input
             )
         self.ln_dec.step(ctx, step_input, step_input)
-        self.output_embedding.projection_step(ctx, step_input, step_out)
         ctx.free(tensor_mask_self_attn)
         ctx.free(tensor_mask_cross_attn)
         ctx.free(position_bias)
+    
+    def projection_step(self, ctx : Context, step_input : Tensor, step_out : Tensor):
+        self.output_embedding.projection_step(ctx, step_input, step_out)
     
     def encode_requires_grad(self,
             ctx : Context,
@@ -337,7 +339,6 @@ class T5Model(Model):
             encoder_output : Tensor,        # (batch, dim_model, seq_k)
             decoder_mask : np.ndarray,      # (batch, dim_model, seq_q)
             encoder_mask : np.ndarray,      # (batch, dim_model, seq_k)
-            decoder_output : Tensor,        # (batch, seq_q, vocab_size)
             hidden_list : List[Tensor]
         ):
         assert decoder_input.shape[:2] == encoder_output.shape[:2]
@@ -372,7 +373,6 @@ class T5Model(Model):
             hidden_buffer.copy_(ctx, decoder_input)
         
         self.ln_dec.forward(ctx, decoder_input, decoder_input)
-        self.output_embedding.projection_forward(ctx, decoder_input, decoder_output)
         ctx.free(tensor_mask_self_attn)
         ctx.free(tensor_mask_cross_attn)
         ctx.free(position_bias)
@@ -382,8 +382,7 @@ class T5Model(Model):
             x : Tensor,                 # (batch. dim_model, seq_len)
             x_mask : np.ndarray,        # (batch, seq_len)
             hidden_list : List[Tensor],
-            grad_output : Tensor,        # (batch, dim_model, seq_len)
-            grad : Tensor
+            grad : Tensor,        # (batch, dim_model, seq_len)
         ):
         batch, dim_model, seq_len = x.shape
         assert len(hidden_list) == self.num_enc
@@ -396,8 +395,11 @@ class T5Model(Model):
         position_bias = ctx.allocate((self.config.NUM_HEADS, seq_len, seq_len), dtype=np.float16)
         self.position_bias_enc.forward(ctx, seq_len, seq_len, position_bias)
 
-        grad.zero_(ctx)
-        self.ln_enc.backward(ctx, layer_output, grad_output, grad)
+        tmp_grad = ctx.allocate(grad.shape, dtype=np.float16)
+        tmp_grad.zero_()
+        self.ln_enc.backward(ctx, layer_output, grad, tmp_grad)
+        grad.copy_(ctx, tmp_grad)
+        ctx.free(tmp_grad)
 
         for layer, layer_input in zip(self.scheduler.loop_layers(
             ctx,
@@ -421,7 +423,6 @@ class T5Model(Model):
             decoder_mask : np.ndarray,      # (batch, dim_model, seq_q)
             encoder_mask : np.ndarray,      # (batch, dim_model, seq_k)
             hidden_list : List[Tensor],
-            grad_output : Tensor,           # (batch, seq_q, vocab_size)
             grad_encoder : Tensor,          # (batch, dim_model, seq_k)
             grad : Tensor                   # (batch, dim_model, seq_q)
         ):
@@ -441,14 +442,13 @@ class T5Model(Model):
         self.position_bias_dec.forward(ctx, seq_q, seq_q, position_bias)
 
         grad_encoder.zero_(ctx)
-        grad.zero_(ctx)
 
         layer_inputs = [decoder_input] + hidden_list[:-1]
         layer_output = hidden_list[-1]
         tmp_grad = ctx.allocate((batch, dim_model, seq_q), dtype=np.float16)
         tmp_grad.zero_(ctx)
-        self.output_embedding.projection_backward(ctx, grad_output, tmp_grad)
-        self.ln_dec.backward(ctx, layer_output, tmp_grad, grad)
+        self.ln_dec.backward(ctx, layer_output, grad, tmp_grad)
+        grad.copy_(ctx, tmp_grad)
         ctx.free(tmp_grad)
 
         for layer, layer_input in zip(self.scheduler.loop_layers(
@@ -470,7 +470,8 @@ class T5Model(Model):
         ctx.free(tensor_mask_self_attn)
         ctx.free(tensor_mask_cross_attn)
 
-        
+    def projection_backward(self, ctx : Context, grad_output : Tensor, grad : Tensor):
+        self.output_embedding.projection_backward(ctx, grad_output, grad)
 
 
 

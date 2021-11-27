@@ -1,28 +1,9 @@
+import numpy as np
 import torch
-from typing import List, Optional, Tuple
-from ..arch.t5 import T5Configuration
+from typing import Optional
 from ..arch.t5 import TorchT5
-
-class CPM2Configuration(T5Configuration):
-    ## structure
-    DIM_MODEL = 4096
-    DIM_FF = 10240
-    DIM_HEAD = 64
-
-    NUM_HEADS = 64
-    NUM_ENCODER_LAYERS = 24
-    NUM_DECODER_LAYERS = 24
-    NUM_POSITION_BUCKETS = 32
-    VOCAB_SIZE = 26240
-    MAX_DISTANCE = 128
-
-    ## runtime
-    DEVICE = None
-    MEMORY_LIMIT = None
-    MODEL_NAME = "file:///root/toolkit/cpm-tmp"
-
-SUPPORTED_VERSION = ["2.2"]
-
+from ..utils import ResultClass
+from ...models.cpm2 import CPM2Configuration, SUPPORTED_VERSION
 
 class CPM2(TorchT5):
     def __init__(self,
@@ -41,4 +22,36 @@ class CPM2(TorchT5):
 
         super().__init__(config)
 
-        
+    def forward(self,
+            input_ids : torch.LongTensor, 
+            attention_mask : torch.FloatTensor,
+            decoder_input_ids : torch.LongTensor,
+            decoder_attention_mask : torch.FloatTensor,
+            encoder_outputs : Optional[torch.FloatTensor] = None,
+            inputs_embeds : Optional[torch.FloatTensor] = None,
+            decoder_inputs_embeds : Optional[torch.FloatTensor] = None,
+            output_attentions : bool = False,
+            output_hidden_states : bool = False
+        ):
+        if output_attentions:
+            raise ValueError("output attentions is not supported")
+        if encoder_outputs is None:
+            if inputs_embeds is None:
+                inputs_embeds = self.embedding(input_ids.cpu().numpy().astype(np.int32))
+            encoder_outputs = self.encode(
+                inputs_embeds,
+                attention_mask.cpu().numpy() > 0.5,
+            )
+        if decoder_inputs_embeds is None:
+            decoder_inputs_embeds = self.embedding(decoder_input_ids.cpu().numpy().astype(np.int32))
+        decoder_outputs = self.decode(
+            decoder_inputs_embeds,
+            decoder_attention_mask.cpu().numpy() > 0.5,
+            encoder_outputs,
+            attention_mask.cpu().numpy() > 0.5,
+        )
+        logits = self.project(decoder_outputs)
+        return ResultClass(
+            logits=logits,
+            decoder_hidden_states=[decoder_outputs.transpose(1, 2)] if output_hidden_states else None,
+        )

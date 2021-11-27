@@ -2,3 +2,4 @@ requests
 tqdm
 jieba
 numpy
+cpm_kernels>=1.0.9

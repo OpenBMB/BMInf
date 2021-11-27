@@ -3,6 +3,7 @@ import torch
 import numpy as np
 from bminf.core import Parameter
 from bminf.arch import T5Model, T5Configuration
+from bminf.models.cpm2 import CPM2Configuration
 from bminf.layers import EncoderBlock, DecoderBlockWithCrossAttention
 import cpm_kernels.kernels as ck
 
@@ -95,7 +96,8 @@ def build_model(ckpt, model : T5Model):
     
 def main():
     model = torch.load("merge.pt")
-    config = T5Configuration()
+    config = CPM2Configuration()
+    config.MODEL_NAME = None
     cpm2 = T5Model(config=config)
     build_model(model, cpm2)
     cpm2.dump(open("checkpoint.pt", "wb"))

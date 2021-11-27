@@ -155,10 +155,8 @@ class GPT2Model(Model):
             ctx : Context, 
             x : Tensor,                             # (batch. dim_model, seq_len)
             x_mask : np.ndarray,                    # (batch, seq_len)
-            x_out : Tensor,                         # (batch, seq_len, vocab_size)
             key_out : Optional[List[Tensor]] = None,      # (batch, num_head, seq_len, dim_head)
             value_out : Optional[List[Tensor]] = None,    # (batch, num_head, seq_len, dim_head)
-            output_one : Optional[int] = None
         ):
         batch, dim_model, seq_len = x.shape
         assert x_mask.shape == (batch, seq_len)
@@ -178,22 +176,26 @@ class GPT2Model(Model):
             )
 
         self.layernorm.forward(ctx, x, x)
+        ctx.free(tensor_mask)
+    
+    def projection(self, ctx : Context, hidden : Tensor, logits_out : Tensor, output_one : Optional[int] = None):
+        batch, dim_model, seq_len = hidden.shape
         if output_one is not None:
             x_pos = ctx.allocate((batch, dim_model), np.float16)
             ck.utils.copy_pos_hidden(
                 batch, dim_model, seq_len, output_one,
-                x.ptr, x_pos.ptr,
+                hidden.ptr, x_pos.ptr,
                 ctx.current_stream
             )
             self.token_embedding.projection_step(
                 ctx,
                 x_pos,
-                x_out
+                logits_out
             )
             ctx.free(x_pos)
         else:
-            self.token_embedding.projection_forward(ctx, x, x_out)
-        ctx.free(tensor_mask)
+            self.token_embedding.projection_forward(ctx, hidden, logits_out)
+        
         
     def step(self,
             ctx : Context,
@@ -201,7 +203,6 @@ class GPT2Model(Model):
             buffer_k : List[Tensor],    # List[(batch, num_heads, buffer_len, dim_head)]
             buffer_v : List[Tensor],    # List[(batch, num_heads, buffer_len, dim_head)]
             step_pos : int,             # int
-            step_out : Tensor           #(batch, vocab_size)
         ):
         batch = step_input.shape[0]
         buffer_len = buffer_k[0].shape[2]
@@ -221,14 +222,15 @@ class GPT2Model(Model):
                 step_input
             )
         self.layernorm.step(ctx, step_input, step_input)
-        self.token_embedding.projection_step(ctx, step_input, step_out)
         ctx.free(tensor_mask_self)
+    
+    def projection_step(self, ctx : Context, x : Tensor, logits_out : Tensor):
+        self.token_embedding.projection_step(ctx, x, logits_out)
     
     def encode_requires_grad(self,
             ctx : Context,
             x : Tensor,                             # (batch. dim_model, seq_len)
             x_mask : np.ndarray,                    # (batch, seq_len)
-            x_out : Tensor,                         # (batch, seq_len, vocab_size)
             hidden_list : List[Tensor]              # List[(batch, dim_model, seq_len)]
         ):
         batch, dim_model, seq_len = x.shape
@@ -247,7 +249,6 @@ class GPT2Model(Model):
             hidden_buffer.copy_(ctx, x)
         
         self.layernorm.forward(ctx, x, x)
-        self.token_embedding.projection_forward(ctx, x, x_out)
         ctx.free(tensor_mask)
     
     def encode_backward(self,
@@ -255,10 +256,9 @@ class GPT2Model(Model):
             x : Tensor,                 # (batch. dim_model, seq_len)
             x_mask : np.ndarray,        # (batch, seq_len)
             hidden_list : List[Tensor], # List[(batch, dim_model, seq_len)]
-            grad_output : Tensor,       # (batch, seq_len, vocab_size)
             grad : Tensor               # (batch. dim_model, seq_len)
         ):
-        batch, seq_len, vocab_size = grad_output.shape
+        batch, dim_model, seq_len = grad.shape
         assert len(hidden_list) == self.num_layers
         layer_inputs = [x] + hidden_list[:-1]
         layer_output = hidden_list[-1]
@@ -267,11 +267,9 @@ class GPT2Model(Model):
         tensor_mask = Tensor.from_numpy(ctx, self_attn_mask)
 
         tmp_grad = ctx.allocate(grad.shape, np.float16)
-        self.token_embedding.projection_backward(
-            ctx, grad_output, tmp_grad
-        )
-        grad.zero_(ctx)
-        self.layernorm.backward(ctx, layer_output, tmp_grad, grad)
+        tmp_grad.zero_(ctx)
+        self.layernorm.backward(ctx, layer_output, grad, tmp_grad)
+        grad.copy_(ctx, tmp_grad)
         ctx.free(tmp_grad)
 
         for layer, layer_input in zip(self.scheduler.loop_layers(
@@ -287,3 +285,10 @@ class GPT2Model(Model):
                 grad
             )
         ctx.free(tensor_mask)
+    
+    def projection_backward(self,
+            ctx : Context, 
+            grad_output : Tensor,   # (batch, seq_len, vocab_size)
+            grad : Tensor           # (batch, dim_model, seq_len)
+        ):
+        self.token_embedding.projection_backward(ctx, grad_output, grad)

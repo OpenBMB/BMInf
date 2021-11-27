@@ -19,25 +19,21 @@ class CPM1Configuration(GPTConfiguration):
     MAX_LENGTH = 1024
     EPS = 1e-5
 
-    
-    ## runtime
-    DEVICE = None
-    MEMORY_LIMIT = None
-    MODEL_NAME = "file:///root/toolkit/cpm1-tmp"
 
-SUPPORTED_VERSION = ["1.1"]
+SUPPORTED_VERSION = ["cpm1-new"]
 
 class CPM1:
     def __init__(self,
             device_idx : Optional[int] = None,
             dynamic_memory : int = 512 * 1024 * 1024,
             memory_limit : Optional[int] = None,
-            version : str = "1.1"
+            version : str = "cpm1-new"
         ) -> None:
         if version not in SUPPORTED_VERSION:
             raise RuntimeError("CPM1 version %s is not supported (requires %s)" % (version, SUPPORTED_VERSION))
-        # TODO: set model name here
         config = CPM1Configuration()
+        config.MODEL_NAME = version
+
         if device_idx is None:
             device_idx = cudart.cudaGetDevice()
         
@@ -120,9 +116,13 @@ class CPM1:
                 self._ctx,
                 hidden_enc,
                 mask_enc,
-                logits,
                 buffer_k_self,
-                buffer_v_self,
+                buffer_v_self
+            )
+            self._model.projection(
+                self._ctx,
+                hidden_enc,
+                logits,
                 output_one=input_length - 1
             )
             self._ctx.free(hidden_enc)
@@ -179,9 +179,9 @@ class CPM1:
                     hidden_dec,
                     buffer_k_self,
                     buffer_v_self,
-                    dec_pos,
-                    logits
+                    dec_pos
                 )
+                self._model.projection_step(self._ctx, hidden_dec, logits)
                 self._ctx.free(hidden_dec)
                 dec_pos += 1
 

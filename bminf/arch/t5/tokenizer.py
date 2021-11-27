@@ -113,28 +113,27 @@ class T5Tokenizer:
     def unk_id(self):
         return self.encoder[self.unk_token]
 
-    def tokenize(self, text):
+    def tokenize(self, text : str) -> List[str]:
         """ Tokenize a string. """
+        text = ''.join([Q2B(x) for x in text])
         output_tokens = []
         for x in jieba.cut(text, cut_all=False):
             x = x.translate(self.translator_enc)
             output_tokens.extend(self.wordpiece_tokenizer.tokenize(x))
         return output_tokens
 
-    def encode(self, text):
-        text = ''.join([Q2B(x) for x in text])
-        res = [self.encoder[x] for x in self.tokenize(text)]
-        return res
+    def encode(self, text : str) -> List[int]:
+        return self.convert_tokens_to_ids( self.tokenize(text) )
 
-    def decode(self, tokens):
+    def decode(self, tokens : List[int]) -> str:
         text = ''.join([self.decoder[x] for x in tokens])
         text = text.translate(self.translator_dec)
         return text
 
-    def convert_tokens_to_ids(self, tokens):
+    def convert_tokens_to_ids(self, tokens : List[str]) -> List[int]:
         return [self.encoder.get(x, self.unk_id) for x in tokens]
 
-    def convert_ids_to_tokens(self, ids):
+    def convert_ids_to_tokens(self, ids : List[int]) -> List[str]:
         return [self.decoder[x] for x in ids]
     
     def get_span(self, span_id) -> int:

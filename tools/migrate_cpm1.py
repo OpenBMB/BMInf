@@ -1,7 +1,8 @@
 import torch
 import numpy as np
 from bminf.core import Parameter
-from bminf.arch import GPT2Model, GPTConfiguration 
+from bminf.arch import GPT2Model
+from bminf.models.cpm1 import CPM1Configuration 
 from bminf.layers.transformer_block import DecoderBlock
 import cpm_kernels.kernels as ck
 
@@ -86,7 +87,7 @@ def build_model(ckpt, model : GPT2Model):
 
 def main():
     model = torch.load("merge.pt")
-    config = GPTConfiguration()
+    config = CPM1Configuration()
     config.MODEL_NAME = None
     cpm1 = GPT2Model(config=config)
     build_model(model, cpm1)

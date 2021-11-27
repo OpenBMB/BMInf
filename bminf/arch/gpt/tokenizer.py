@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from collections import OrderedDict
+from typing import List
 from ...utils import jieba
 
 class WordpieceTokenizer(object):
@@ -115,26 +116,25 @@ class GPT2Tokenizer(object):
     def start_of_word(self):
         return "\u2581"
         
-    def tokenize(self, text):
-        """ Tokenize a string. """
+    def tokenize(self, text : str) -> List[str]:
+        text = ''.join([Q2B(x) for x in text])
         output_tokens = []
         for x in jieba.cut(text, cut_all=False):
             x = self.start_of_word + x.translate(self.translator_enc)
             output_tokens.extend(self.wordpiece_tokenizer.tokenize(x))
         return output_tokens
 
-    def encode(self, text):
-        text = ''.join([Q2B(x) for x in text])
+    def encode(self, text : str) -> List[int]:
         res = self.convert_tokens_to_ids(self.tokenize(text))
         return res
 
-    def decode(self, ids):
+    def decode(self, ids : List[int]) -> str:
         text = ''.join(self.convert_ids_to_tokens(ids))
         text = text.translate(self.translator_dec)
         return text.replace(self.start_of_word, "")
 
-    def convert_tokens_to_ids(self, tokens):
+    def convert_tokens_to_ids(self, tokens : List[str]) -> List[int]:
         return [self.encoder.get(x, self.unk_id) for x in tokens]
 
-    def convert_ids_to_tokens(self, ids):
+    def convert_ids_to_tokens(self, ids : List[int]) -> List[str]:
         return [self.decoder[x] for x in ids]
