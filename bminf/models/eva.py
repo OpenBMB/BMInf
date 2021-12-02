@@ -22,7 +22,8 @@ class EVAConfiguration(T5Configuration):
     NUM_POSITION_BUCKETS = 32
     VOCAB_SIZE = 30000
     MAX_DISTANCE = 256
-
+    EPS = 1e-6
+    
     ## runtime
     DEVICE = None
     MEMORY_LIMIT = None

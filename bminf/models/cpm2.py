@@ -22,6 +22,7 @@ class CPM2Configuration(T5Configuration):
     NUM_POSITION_BUCKETS = 32
     VOCAB_SIZE = 26240
     MAX_DISTANCE = 128
+    EPS = 1e-6
 
 
 SUPPORTED_VERSION = ["cpm2.1-new"]

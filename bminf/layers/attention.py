@@ -263,8 +263,8 @@ class Attention(Layer):
 
         h_q = ctx.allocate((batch, self.num_heads * self.dim_head, seq_q), dtype=np.float16)
         h_k = ctx.allocate((batch, self.num_heads * self.dim_head, seq_k), dtype=np.float16)
-        self.project_q.backward(ctx, hidden_q, h_q)
-        self.project_k.backward(ctx, hidden_kv, h_k)
+        self.project_q.forward(ctx, hidden_q, h_q)
+        self.project_k.forward(ctx, hidden_kv, h_k)
 
         # h_q (batch * num_heads, dim_head, seq_q)
         # h_k (batch * num_heads, dim_head, seq_k)
@@ -318,7 +318,7 @@ class Attention(Layer):
         grad_attn_out = ctx.allocate((batch, self.dim_head * self.num_heads, seq_q), dtype=np.float16)
         self.linear_out.backward(ctx, grad_output, grad_attn_out)
 
-        grad_h_v = ctx.allocate((batch, self.dim_head * self.num_heads, seq_k), dtype=np.float16)
+        grad_h_v = ctx.allocate((batch, self.num_heads * self.dim_head, seq_k), dtype=np.float16)
         ck.gemm_fp16(
             seq_k, seq_q, self.dim_head,
             batch * self.num_heads, batch * self.num_heads,
@@ -327,15 +327,15 @@ class Attention(Layer):
             grad_h_v.ptr,
             ctx.current_stream
         )
-        tmp_grad_kv = ctx.allocate(grad_kv.shape, dtype=np.float16)
-        self.project_k.backward(ctx, grad_h_v, tmp_grad_kv)
+        tmp_grad_v = ctx.allocate(grad_kv.shape, dtype=np.float16)
+        self.project_v.backward(ctx, grad_h_v, tmp_grad_v)
         ck.arith_element_add(
             batch, dim_model * seq_k,
-            grad_kv.ptr, tmp_grad_kv.ptr,
+            grad_kv.ptr, tmp_grad_v.ptr,
             grad_kv.ptr,
             ctx.current_stream
         )
-        ctx.free(tmp_grad_kv)
+        ctx.free(tmp_grad_v)
         ctx.free(grad_h_v)
 
         grad_attn = ctx.allocate((batch * self.num_heads, seq_k, seq_q), dtype=np.float16)
@@ -360,7 +360,7 @@ class Attention(Layer):
         ctx.free(h_attn)
 
         ck.mask(
-            batch * self.num_heads, seq_k, seq_q,
+            batch, self.num_heads, seq_k * seq_q,
             grad_attn_score.ptr,
             mask.ptr,
             float(0),

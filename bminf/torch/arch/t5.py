@@ -85,7 +85,7 @@ class OpT5Encode(torch.autograd.Function):
         wait_stream(torch.cuda.current_stream().cuda_stream, ctx.inf_ctx.current_stream)
         model.encode_backward(
             ctx.inf_ctx,
-            input_hidden,
+            torch_to_tensor(input_hidden),
             ctx.input_mask,
             [ torch_to_tensor(x) for x in enc_buffer ],
             torch_to_tensor(grad_hidden)
