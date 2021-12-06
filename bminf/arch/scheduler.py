@@ -68,7 +68,11 @@ class LayerScheduler:
                     # try to load this layer
                     if not self.load(layers[order[j]]):
                         break
-            assert layers[order[i]].on_device
+                elif not layers[order[j]].is_fixed:
+                    # lock non-fixed layer
+                    layers[order[j]].locked = True
+
+            assert layers[order[i]].on_device, "Error, layer %d is not on device" % order[i]
             # wait for loader stream
             cudart.cudaStreamWaitEvent(ctx.current_stream, layers[order[i]].loader_event)
 
