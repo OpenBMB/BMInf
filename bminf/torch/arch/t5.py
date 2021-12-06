@@ -165,18 +165,30 @@ class TorchT5Tokenizer:
 
     def __len__(self):
         return len(self.tokenizer)
+
+    @property
+    def sod_token(self) -> int:
+        return self.tokenizer.sod_token
     
     @property
     def sod_token_id(self) -> int:
         return self.tokenizer.sod_id
     
     @property
+    def eos_token(self) -> int:
+        return self.tokenizer.eod_token
+    
+    @property
     def eos_token_id(self) -> int:
         return self.tokenizer.eod_id
+    
+    @property
+    def pad_token(self) -> int:
+        return '<pad>'
 
     @property
     def pad_token_id(self) -> int:
-        return self.tokenizer.encoder['<pad>']
+        return self.tokenizer.encoder[self.pad_token]
 
     def num_special_tokens_to_add(self) -> int:
         return 0
