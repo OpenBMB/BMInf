@@ -43,4 +43,7 @@ class CUDAAllocator(Allocator):
                 cudart.cudaFree(mem.ptr)
 
     def __del__(self):
-        self.free_all()
+        try:
+            self.free_all()
+        except Exception:
+            pass
