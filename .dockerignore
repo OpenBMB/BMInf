@@ -5,3 +5,4 @@ build
 *.egg-info
 .git
 docker
+private

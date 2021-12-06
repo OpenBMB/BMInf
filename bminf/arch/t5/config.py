@@ -10,6 +10,7 @@ class T5Configuration:
     NUM_POSITION_BUCKETS = 32
     VOCAB_SIZE = 26240
     MAX_DISTANCE = 128
+    EPS = 1e-6
     
     ## runtime
     DEVICE = None

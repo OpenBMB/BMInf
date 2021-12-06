@@ -26,7 +26,7 @@ class T5Model(Model):
 
         self.num_enc = config.NUM_ENCODER_LAYERS
         self.num_dec = config.NUM_DECODER_LAYERS
-        self.eps = 1e-5
+        self.eps = config.EPS
         
         self.enc_layers = LayerList([
             EncoderBlock(config.DIM_MODEL, config.NUM_HEADS, config.DIM_HEAD, config.DIM_FF, self.eps, bias=False, gated=True) for _ in range(self.num_enc)
@@ -396,7 +396,7 @@ class T5Model(Model):
         self.position_bias_enc.forward(ctx, seq_len, seq_len, position_bias)
 
         tmp_grad = ctx.allocate(grad.shape, dtype=np.float16)
-        tmp_grad.zero_()
+        tmp_grad.zero_(ctx)
         self.ln_enc.backward(ctx, layer_output, grad, tmp_grad)
         grad.copy_(ctx, tmp_grad)
         ctx.free(tmp_grad)
@@ -432,7 +432,6 @@ class T5Model(Model):
         assert decoder_mask.shape == (batch, seq_q)
         assert encoder_mask.shape == (batch, seq_k)
         assert len(hidden_list) == self.num_dec
-
         self_attn_mask = decoder_mask[:, :, np.newaxis] & decoder_mask[:, np.newaxis, :] & (np.arange(seq_q)[:, np.newaxis] <= np.arange(seq_q)[np.newaxis, :])
         cross_attn_mask = encoder_mask[:, :, np.newaxis] & decoder_mask[:, np.newaxis, :]
         tensor_mask_self_attn = Tensor.from_numpy(ctx, self_attn_mask)
@@ -440,7 +439,6 @@ class T5Model(Model):
 
         position_bias = ctx.allocate((self.config.NUM_HEADS, seq_q, seq_q), dtype=np.float16)
         self.position_bias_dec.forward(ctx, seq_q, seq_q, position_bias)
-
         grad_encoder.zero_(ctx)
 
         layer_inputs = [decoder_input] + hidden_list[:-1]
