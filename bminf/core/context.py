@@ -71,4 +71,5 @@ class Context:
             for stream in self.__calc_streams.values():
                 cudart.cudaStreamDestroy(stream)
         except Exception:
-            logger.exception("Exception in Context.__del__")
+            # logger.exception("Exception in Context.__del__")
+            pass

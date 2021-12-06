@@ -158,10 +158,38 @@ class OpT5Decode(torch.autograd.Function):
 class TorchT5Tokenizer:
     def __init__(self, tokenizer : T5Tokenizer) -> None:
         self.tokenizer = tokenizer
+
+    @property
+    def vocab_size(self):
+        return len(self.tokenizer)
+
+    def __len__(self):
+        return len(self.tokenizer)
+    
+    @property
+    def sod_token_id(self) -> int:
+        return self.tokenizer.sod_id
     
     @property
     def eos_token_id(self) -> int:
         return self.tokenizer.eod_id
+
+    @property
+    def pad_token_id(self) -> int:
+        return self.tokenizer.encoder['<pad>']
+
+    def num_special_tokens_to_add(self) -> int:
+        return 0
+    
+    def get_special_tokens_mask(self, ids : List[int]) -> List[int]:
+        return [0 for _ in ids]
+    
+    def build_inputs_with_special_tokens(self, ids : List[int]) -> List[int]:
+        return [x for x in ids]
+
+    @property
+    def additional_special_tokens_ids(self) -> List[int]:
+        return self.tokenizer.sentinel_list
     
     @overload
     def convert_tokens_to_ids(self, tokens : List[str]) -> List[int]: ...
@@ -194,6 +222,26 @@ class TorchT5Tokenizer:
     
     def tokenize(self, text : str) -> List[str]:
         return self.tokenizer.tokenize(text)
+    
+    def encode(self, text : Union[str, List[str]], **kwargs) -> List[int]:
+        if isinstance(text, str):
+            return self.tokenizer.encode(text)
+        elif isinstance(text, list):
+            return [self.tokenizer.encode(t) for t in text]
+        else:
+            raise TypeError("text must be str or list[str]")
+    
+    def decode(self, ids : torch.Tensor) -> Union[str, List[str]]:
+        assert ids.dtype == torch.int64 or ids.dtype == torch.int32
+        if ids.ndim == 1:
+            return self.tokenizer.decode(ids.tolist()) 
+        elif ids.ndim == 2:
+            return [
+                self.tokenizer.decode(s)
+                for s in ids.tolist()
+            ]
+        else:
+            raise ValueError("ids must be 1D or 2D")
 
 
 class TorchT5(torch.nn.Module):
@@ -214,28 +262,7 @@ class TorchT5(torch.nn.Module):
     
     @property
     def tokenizer(self):
-        return TorchT5Tokenizer(self._model)
-    
-    def tokenize(self, text : Union[str, List[str]]) -> torch.Tensor:
-        if isinstance(text, str):
-            return torch.LongTensor(self._model.tokenizer.encode(text))
-        elif isinstance(text, list):
-            return torch.LongTensor([self._model.tokenizer.encode(t) for t in text])
-        else:
-            raise TypeError("text must be str or list[str]")
-    
-    def detokenize(self, ids : torch.Tensor) -> Union[str, List[str]]:
-        assert ids.dtype == torch.int64 or ids.dtype == torch.int32
-        if ids.ndim == 1:
-            return self._model.tokenizer.decode(ids.tolist()) 
-        elif ids.ndim == 2:
-            return [
-                self._model.tokenizer.decode(s)
-                for s in ids.tolist()
-            ]
-        else:
-            raise ValueError("ids must be 1D or 2D")
-
+        return TorchT5Tokenizer(self._model.tokenizer)
 
     def embedding(self, input_idx : np.ndarray) -> torch.Tensor:
         """
@@ -319,6 +346,10 @@ class TorchT5(torch.nn.Module):
             cudart.cudaMemcpyAsync(
                 out.data_ptr(), self._model.input_embedding.weight.value.ptr, self._model.input_embedding.weight.nbytes, cudart.cudaMemcpyDeviceToDevice, torch.cuda.current_stream().cuda_stream
             )
-        return out
+        # return out
+        module = torch.nn.Embedding(self._model.config.VOCAB_SIZE, self._model.config.DIM_MODEL)
+        with torch.no_grad():
+            module.weight.copy_(out.detach())
+        return module
             
 
