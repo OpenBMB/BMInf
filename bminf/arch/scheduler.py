@@ -62,6 +62,11 @@ class LayerScheduler:
         layer.locked = False
     
     def loop_layers(self, ctx : Context, layers : LayerList[T], order : List[int]) -> Generator[T, None, None]:
+        # release all layers before loop
+        for i in range(self.pool_size):
+            if self.pool_items[i] is not None:
+                self.release(ctx, self.pool_items[i])
+
         for i in range(len(order)):
             for j in range(i, len(order)):
                 if not layers[order[j]].on_device:
