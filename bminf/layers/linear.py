@@ -103,6 +103,15 @@ class Linear(Layer):
         ctx.free(x_scale)
         ctx.free(x_quant)
 
+        if self.bias:
+            ck.arith_batch_add_forward(
+                batch, self.out_features,
+                x_out.ptr,
+                self.bias.value.ptr,
+                x_out.ptr,
+                ctx.current_stream
+            )
+
     def backward(self, ctx : Context, grad_output : Tensor, grad : Tensor):
         ## WARNING: backward function of Linear layer does not accumulate gradients
         batch, hidden_size, seq_len = grad_output.shape
