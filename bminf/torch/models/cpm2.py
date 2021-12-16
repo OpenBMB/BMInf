@@ -25,6 +25,10 @@ class CPM2(TorchT5):
 
         super().__init__(config)
 
+        class Dummy:
+            is_encoder_decoder = True
+        self.config = Dummy()
+
     def forward(self,
             input_ids : Optional[torch.LongTensor] = None,                  # (batch_size, enc_len)
             inputs_embeds : Optional[torch.FloatTensor] = None,             # (batch_size, enc_len, embed_dim)
