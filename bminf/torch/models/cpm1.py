@@ -25,11 +25,15 @@ class CPM1(TorchGPT2):
 
         super().__init__(config)
 
+        class Dummy:
+            is_encoder_decoder = False
+        self.config = Dummy()
+
     def forward(self,
-            input_ids : torch.LongTensor,
-            attention_mask : torch.FloatTensor,
-            position_ids : Optional[torch.LongTensor] = None,
-            inputs_embeds : Optional[torch.FloatTensor] = None,
+            input_ids : Optional[torch.LongTensor] = None,                  # (batch_size, enc_len)
+            inputs_embeds : Optional[torch.FloatTensor] = None,             # (batch_size, enc_len, embed_dim)
+            position_ids : Optional[torch.LongTensor] = None,               # (batch_size, enc_len)
+            attention_mask : Optional[torch.FloatTensor] = None,            # (batch_size, enc_len)
             output_attentions : bool = False,
             output_hidden_states : bool = False
         ):
@@ -41,6 +45,11 @@ class CPM1(TorchGPT2):
             position_ids = position_ids.cpu().numpy().astype(np.int32)
             input_ids = input_ids.cpu().numpy().astype(np.int32)
             inputs_embeds = self.embedding(input_ids, position_ids)
+        else:
+            inputs_embeds = inputs_embeds.permute(0, 2, 1) # (batch_size, embed_dim, enc_len)
+            inputs_embeds = inputs_embeds.half()
+        if attention_mask is None:
+            attention_mask = torch.ones((inputs_embeds.shape[0], inputs_embeds.shape[2]))
         hidden_state = self.encode(
             inputs_embeds,
             attention_mask.cpu().numpy() > 0.5,

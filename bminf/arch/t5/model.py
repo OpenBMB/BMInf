@@ -208,8 +208,8 @@ class T5Model(Model):
             ctx : Context,
             decoder_input : Tensor,         # (batch, dim_model, seq_q)
             encoder_output : Tensor,        # (batch, dim_model, seq_k)
-            decoder_mask : np.ndarray,      # (batch, dim_model, seq_q)
-            encoder_mask : np.ndarray,      # (batch, dim_model, seq_k)
+            decoder_mask : np.ndarray,      # (batch, seq_q)
+            encoder_mask : np.ndarray,      # (batch, seq_k)
         ):
         assert decoder_input.shape[:2] == encoder_output.shape[:2]
         batch, dim_model, seq_q = decoder_input.shape
@@ -337,8 +337,8 @@ class T5Model(Model):
             ctx : Context,
             decoder_input : Tensor,         # (batch, dim_model, seq_q)
             encoder_output : Tensor,        # (batch, dim_model, seq_k)
-            decoder_mask : np.ndarray,      # (batch, dim_model, seq_q)
-            encoder_mask : np.ndarray,      # (batch, dim_model, seq_k)
+            decoder_mask : np.ndarray,      # (batch, seq_q)
+            encoder_mask : np.ndarray,      # (batch, seq_k)
             hidden_list : List[Tensor]
         ):
         assert decoder_input.shape[:2] == encoder_output.shape[:2]
