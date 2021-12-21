@@ -9,8 +9,8 @@ def main():
     attention_mask = torch.FloatTensor([[1, 1, 1, 1]])
 
     output = model(
-        ids,
-        attention_mask,
+        input_ids=ids,
+        attention_mask=attention_mask,
     )
     print("Logits: ", output.logits)
 

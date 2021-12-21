@@ -10,10 +10,10 @@ def main():
     decoder_input = torch.LongTensor([[123, 124, 125, 126]])
     decoder_attention_mask = torch.FloatTensor([[1, 1, 1, 0]])
     output = model(
-        ids,
-        attention_mask,
-        decoder_input,
-        decoder_attention_mask
+        input_ids=ids,
+        attention_mask=attention_mask,
+        decoder_input_ids=decoder_input,
+        decoder_attention_mask=decoder_attention_mask
     )
     print("Logits: ", output.logits)
 
