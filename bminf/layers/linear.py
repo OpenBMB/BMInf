@@ -1,45 +1,151 @@
-import cupy
-from .base import Layer
-from ..parameter import Parameter
-from ..allocator import Allocator
-from ..functions.quantization import quantize
-from ..functions.gemm import igemm
-from ..functions.scale_copy import elementwise_copy_scale
+from ..core import Layer, Parameter, Context, Tensor
+import numpy as np
+from cpm_kernels import kernels as ck
+
 
 class Linear(Layer):
+    def __init__(self, in_features, out_features, bias=True):
+        super().__init__()
+        self.in_features = in_features
+        self.out_features = out_features
 
-    def __init__(self, dim_in : int, dim_out : int, bias=False):
-        self.dim_in = dim_in
-        self.dim_out = dim_out
-        self.bias = bias
+        self.weight = Parameter((out_features, in_features), dtype=np.int8)
+        self.scale = Parameter((out_features,), dtype=np.float16)
 
-        self.weight = Parameter((dim_out, dim_in), cupy.int8)
-        self.weight_scale = Parameter((dim_out, 1), cupy.float16)
+        if bias:
+            self.bias = Parameter((out_features,), dtype=np.float16)
+        else:
+            self.bias = None
+    
+    def forward(self, ctx : Context, x : Tensor, x_out : Tensor):
+        batch, hidden_size, seq_len = x.shape
+        assert x.dtype == np.float16
+        assert hidden_size == self.in_features
+        assert x_out.shape == (batch, self.out_features, seq_len) and x_out.dtype == np.float16
+        
+        quantized_x = ctx.allocate((batch, hidden_size, seq_len), dtype=np.int8)
+        scale_x = ctx.allocate((batch, seq_len), dtype=np.float16)
+
+        ck.gemm_calc_scale_transpose(
+            batch, hidden_size, seq_len,
+            x.ptr, scale_x.ptr,
+            ctx.current_stream
+        )
+
+        ck.gemm_round_transpose(
+            batch, hidden_size, seq_len,
+            x.ptr, scale_x.ptr,
+            quantized_x.ptr,
+            ctx.current_stream
+        )
+
+        out_i32 = ctx.allocate((batch, self.out_features, seq_len), dtype=np.int32)
+        ck.gemm_int8(
+            seq_len, hidden_size, self.out_features,
+            batch, 1,
+            False, False,
+            quantized_x.ptr, self.weight.value.ptr,
+            out_i32.ptr,
+            ctx.current_stream
+        )
+
+        ck.gemm_scale(
+            batch, self.out_features, seq_len,
+            out_i32.ptr,
+            self.scale.value.ptr,
+            scale_x.ptr,
+            x_out.ptr,
+            True,
+            False,
+            ctx.current_stream
+        )
+        ctx.free(out_i32)
+        ctx.free(scale_x)
+        ctx.free(quantized_x)
+
         if self.bias:
-            self.weight_bias = Parameter((dim_out,), cupy.float16)
-        
+            ck.arith_ln_add(
+                batch, self.out_features, seq_len,
+                x_out.ptr,
+                self.bias.value.ptr,
+                x_out.ptr,
+                ctx.current_stream
+            )
+    
+    def step(self, ctx : Context, x : Tensor, x_out : Tensor):
+        batch, hidden_size = x.shape
+        assert x.shape == (batch, self.in_features) and x.dtype == np.float16
+        assert x_out.shape == (batch, self.out_features) and x_out.dtype == np.float16
 
-    def forward(self, allocator : Allocator, x : cupy.ndarray):
-        assert x.dtype == cupy.float16
-        value = x
-
-        batch_size, dim_in, seq_len = value.shape
-        assert dim_in == self.dim_in
-
-        value_i8 = allocator.alloc_array(value.shape, cupy.int8)
-        scale = allocator.alloc_array((batch_size, 1, seq_len), dtype=cupy.float16)
-        
-        # (batch_size, dim_in, seq_len), (batch_size, 1, seq_len)
-        quantize(value, value_i8, scale, axis=1)
-
-        out_i32 = allocator.alloc_array((batch_size, self.dim_out, seq_len), cupy.int32)
-        
-        igemm(allocator, value_i8, False, self.weight.value[cupy.newaxis], False, out_i32)
-        
-        out_f16 = allocator.alloc_array(out_i32.shape, cupy.float16)
-        elementwise_copy_scale(out_i32, scale, self.weight_scale.value, out_f16)
+        x_scale = ctx.allocate((batch,), np.float16)
+        x_quant = ctx.allocate((batch, hidden_size), np.int8)
+        ck.gemv_calc_scale(
+            batch, hidden_size,
+            x.ptr, 
+            x_scale.ptr,
+            ctx.current_stream
+        )
+        ck.gemv_round(
+            batch, hidden_size,
+            x.ptr, x_scale.ptr,
+            x_quant.ptr,
+            ctx.current_stream
+        )
+        ck.gemv_broadcast_mat_int8(
+            batch, self.out_features, hidden_size,
+            self.scale.value.ptr,
+            self.weight.value.ptr,
+            x_scale.ptr,
+            x_quant.ptr,
+            x_out.ptr,
+            ctx.current_stream
+        )
+        ctx.free(x_scale)
+        ctx.free(x_quant)
 
         if self.bias:
-            out_f16 += self.weight_bias.value[cupy.newaxis, :, cupy.newaxis]   # (1#batch_size, dim_out, 1#seq_len)
+            ck.arith_batch_add_forward(
+                batch, self.out_features,
+                x_out.ptr,
+                self.bias.value.ptr,
+                x_out.ptr,
+                ctx.current_stream
+            )
 
-        return out_f16
+    def backward(self, ctx : Context, grad_output : Tensor, grad : Tensor):
+        ## WARNING: backward function of Linear layer does not accumulate gradients
+        batch, hidden_size, seq_len = grad_output.shape
+        assert hidden_size == self.out_features and grad_output.dtype == np.float16
+        assert grad.shape == (batch, self.in_features, seq_len) and grad.dtype == np.float16
+
+        quant_G = ctx.allocate((batch, self.out_features, seq_len), dtype=np.int8)
+        scale_G = ctx.allocate((batch, seq_len), dtype=np.float16)
+        ck.gemm_backward_scale_round(
+            batch, self.out_features, seq_len,
+            grad_output.ptr,
+            self.scale.value.ptr,
+            quant_G.ptr,
+            scale_G.ptr,
+            True,
+            ctx.current_stream
+        )
+        grad_i32 = ctx.allocate((batch, self.in_features, seq_len), dtype=np.int32)
+        ck.gemm_int8(
+            seq_len, self.out_features, self.in_features,
+            batch, 1,
+            False, True,
+            quant_G.ptr, self.weight.value.ptr, 
+            grad_i32.ptr,
+            ctx.current_stream
+        )
+        ctx.free(quant_G)
+        ck.gemm_scale_y(
+            batch, self.in_features, seq_len,
+            grad_i32.ptr,
+            scale_G.ptr,
+            grad.ptr,
+            ctx.current_stream
+        )
+        ctx.free(scale_G)
+        ctx.free(grad_i32)
+        

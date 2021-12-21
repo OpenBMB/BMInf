@@ -1,13 +1,13 @@
+from ..core import Context, Tensor
 from typing import List, Optional
 import numpy as np
-import cupy
+import cpm_kernels.kernels as ck
 
 class GenerateSampler:
     def __init__(self,
+            ctx : Context,
             prompt_text : List[int],
             vocab_size : int,
-            device : cupy.cuda.Device,
-            max_length : int = 128,
             top_n : Optional[int] = None,
             top_p : Optional[float] = None,
             temperature : float = 1,
@@ -16,16 +16,14 @@ class GenerateSampler:
             no_penalty_tokens : List[int] = [],
             filter_tokens : List[int] = [],
         ):
-        self.max_length = max_length
-        self.temperature = cupy.float16(temperature)
-        self.frequency_penalty = cupy.float16(frequency_penalty)
-        self.presence_penalty = cupy.float16(presence_penalty)
+        self.temperature = temperature
+        self.frequency_penalty = frequency_penalty
+        self.presence_penalty = presence_penalty
         self.vocab_size = vocab_size
-        self.device = device
         self.top_n = top_n
         self.top_p = top_p
-        self.filter_tokens = filter_tokens
         self.no_penalty_tokens = set(no_penalty_tokens)
+
 
         if self.top_n is not None:
             if self.top_n > vocab_size:
@@ -38,52 +36,71 @@ class GenerateSampler:
             if self.top_p <= 0:
                 raise ValueError("top_p <= 0")
 
-        with device:
-            self.frequency_count = cupy.zeros((vocab_size,), dtype=cupy.int32)
-            for token in prompt_text:
-                if token not in self.no_penalty_tokens:
-                    self.frequency_count[token] += 1
+        frequency_cpu = np.zeros((vocab_size,), dtype=np.int32)
+        for token in prompt_text:
+            frequency_cpu[token] += 1
+        self.frequency_count = Tensor.from_numpy(ctx, frequency_cpu)
 
-    def sample(self, logits : cupy.ndarray) -> int:
+        filter_mask = np.ones((vocab_size,), dtype=np.int8)
+        for token in filter_tokens:
+            filter_mask[token] = 0
+        self.filter_mask = Tensor.from_numpy(ctx, filter_mask)
+
+        self._ctx = ctx
+
+    def sample(self, logits : Tensor) -> int:
         assert logits.shape == (self.vocab_size,)
-        assert logits.device == self.device
-        with self.device:
-            logits /= self.temperature
-            logits -= self.frequency_penalty * self.frequency_count
-            logits -= self.presence_penalty * (self.frequency_count > 1)
-
-            logits -= logits.max()
-            logits = cupy.exp(logits)
-            logits /= logits.sum()
-            cpu_probs = cupy.asnumpy(logits).astype(np.float32)
-
-        for it in self.filter_tokens:
-            cpu_probs[it] = 0
-            
-        idx = cpu_probs.argsort()
-        cpu_probs.sort()
-
+        
+        ck.utils.adjustify_logits(
+            1, self.vocab_size,
+            logits.ptr,
+            self.temperature,
+            self.frequency_penalty,
+            self.presence_penalty,
+            self.frequency_count.ptr,
+            self._ctx.current_stream
+        )
+        ck.mask(
+            1, 1, self.vocab_size,
+            logits.ptr,
+            self.filter_mask.ptr,
+            float("-inf"),
+            logits.ptr,
+            self._ctx.current_stream
+        )
+        ck.softmax_step_inplace(
+            1, self.vocab_size,
+            logits.ptr,
+            self._ctx.current_stream
+        )
+        logits_cpu = logits.numpy().astype(np.float32)
+        idx = logits_cpu.argsort()
+        logits_cpu.sort()
         cut_off = 0
         if self.top_n is not None:
             cut_off = max(cut_off, self.vocab_size - self.top_n)
 
         if self.top_p is not None:
             suffix_sum = 0
-            suffix_pos = cpu_probs.shape[0]
+            suffix_pos = logits_cpu.shape[0]
             while suffix_pos > 0:
                 suffix_pos -= 1
-                suffix_sum += cpu_probs[suffix_pos]
+                suffix_sum += logits_cpu[suffix_pos]
                 if suffix_sum > self.top_p:
                     break
             cut_off = max(cut_off, suffix_pos)
-        
-        cpu_probs[:cut_off] = 0
-        
-        cpu_probs /= cpu_probs.sum()
-        ret = idx[np.random.choice(cpu_probs.shape[0], p=cpu_probs)].item()
+        logits_cpu[:cut_off] = 0
+        logits_cpu /= logits_cpu.sum()
+        ret = idx[np.random.choice(logits_cpu.shape[0], p=logits_cpu)].item()
         if ret not in self.no_penalty_tokens:
-            with self.device:
-                self.frequency_count[ret] += 1
-        
+            ck.utils.array_add(
+                self.frequency_count.ptr,
+                ret,
+                1,
+                self._ctx.current_stream
+            )
         return ret
 
+    def free(self):
+        self._ctx.free(self.frequency_count)
+        self._ctx.free(self.filter_mask)

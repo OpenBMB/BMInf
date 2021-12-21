@@ -1,73 +1,192 @@
-from typing import Optional, Union, List
-import numpy as np
-from ..arch.t5 import T5Configuration, T5
-import cupy
+from typing import List, Optional, Tuple
+from ..arch.t5 import T5Configuration, T5Model
+from ..core.allocators.cuda import CUDAAllocator
+from ..core.allocators.sizelimited import SizeLimitedAllocator
+from ..core import Context, Device
 from ..utils.sampler import GenerateSampler
+from cpm_kernels.library import cudart
+import cpm_kernels.kernels as ck
+import numpy as np
 
-import logging
-logger = logging.getLogger(__name__)
-
+SPAN_TOKEN = "<span>"
 
 class EVAConfiguration(T5Configuration):
-    MODEL_NAME = "eva-int8"
+    ## structure
     DIM_MODEL = 2048
     DIM_FF = 5120
-    DIM_KV = 64
+    DIM_HEAD = 64
 
     NUM_HEADS = 32
     NUM_ENCODER_LAYERS = 24
     NUM_DECODER_LAYERS = 24
     NUM_POSITION_BUCKETS = 32
     VOCAB_SIZE = 30000
-    MAX_DECODER_LENGTH = 256
+    MAX_DISTANCE = 256
+    EPS = 1e-6
+    
+    ## runtime
+    DEVICE = None
+    MEMORY_LIMIT = None
+    MODEL_NAME = None
 
-class EVA(T5):
-    def __init__(self, device : Union[None, int, cupy.cuda.Device] = None, memory_limit : Optional[int] = None, config : Optional[EVAConfiguration] = None):
-        """Model EVA: An Open-Domain Chinese Dialogue System with Large-Scale Generative Pre-Training
+SUPPORTED_VERSION = ["eva-int8-new"]
+LATEST_VERSION = SUPPORTED_VERSION[-1]
+
+class EVA:
+    def __init__(self,
+            device_idx : Optional[int] = None,
+            dynamic_memory : int = 512 * 1024 * 1024,   # 512MB
+            memory_limit : Optional[int] = None,
+            version : Optional[str] = None
+        ) -> None:
+        if version is None:
+            version = LATEST_VERSION
+        if version not in SUPPORTED_VERSION:
+            raise RuntimeError("EVA version %s is not supported (requires %s)" % (version, SUPPORTED_VERSION))
+        config = EVAConfiguration()
+        config.MODEL_NAME = version
+
+        if device_idx is None:
+            device_idx = cudart.cudaGetDevice()
         
-        `[Repo] <https://github.com/thu-coai/EVA/>`__
-        `[PDF] <https://arxiv.org/abs/2108.01547>`__
+        config.DEVICE = device_idx
+        config.MEMORY_LIMIT = memory_limit
 
-        Args:
-            device: Index of CUDA device or ``None``.
-            memory_limit: Total memory limit for this model in bytes.
-            config: An EVA configuration object.
-        """
-        if config is None:
-            config = EVAConfiguration()
+        self.device = Device(config.DEVICE)
 
-        if config.DEVICE is None:
-            if device is None:
-                device = 0
-            if isinstance(device, int):
-                device = cupy.cuda.Device(device)
-            config.DEVICE = device
+        self._cudaAlloc = CUDAAllocator(config.DEVICE)
+        self._ctx = Context([config.DEVICE], [
+            SizeLimitedAllocator( self._cudaAlloc.allocate( dynamic_memory ))
+        ])
+        self._model = T5Model(config)
+        self._config = config
 
-        if config.MEMORY_LIMIT is None:
-            if memory_limit is None:
-                # free - 100MB
-                memory_limit = config.DEVICE.mem_info[0] - 100 * 1024 * 1024
-            config.MEMORY_LIMIT = memory_limit
-        
-        if config.MEMORY_OVERLAP:
-            if config.OVERLAP_LAYERS is None:
-                max_overlap = max(config.NUM_ENCODER_LAYERS, config.NUM_DECODER_LAYERS)
-                max_layers = (config.MEMORY_LIMIT - config.DYNAMIC_MEMORY - 1235640320) // 226615296
+    def _pre_processing(self,
+            context : List[str],
+            truncation_length : Optional[int] = 256
+        ):
+        idx = []
+        sep_idx = self._model.tokenizer.convert_tokens_to_ids(["<sep>"])[0]
+        for sentence in context:
+            idx.extend(self._model.tokenizer.encode(sentence) + [sep_idx])
+        idx.append( self._model.tokenizer.get_span(0) )
 
-                logger.info("Auto overlap layers: (max_layers: %d, max_overlap: %d)", max_layers, max_overlap)
-                if max_layers * 3 < max_overlap * 4:
-                    config.OVERLAP_LAYERS = max_layers // 4
-                elif max_layers < max_overlap * 2:
-                    config.OVERLAP_LAYERS = max_layers - max_overlap
-                else:
-                    config.OVERLAP_LAYERS = max_overlap
-                logger.info("Auto overlap layers: result %d", config.OVERLAP_LAYERS)
-                if config.OVERLAP_LAYERS < 1:
-                    raise ValueError("Memory is not enough")
+        if truncation_length is not None and len(idx) > truncation_length:
+            idx = idx[-truncation_length:]
 
-        super().__init__(config)
+        input_length = len(idx)
 
-    def dialogue(self, 
+        while len(idx) % 4 != 0:
+            idx.append(0)
+
+        return idx, input_length
+
+    def _gen_iter(self, 
+            idx : List[int],
+            input_length : int,
+            max_length : int,
+            start_token : int,
+            top_n : Optional[int] = None,
+            top_p : Optional[float] = None,
+            temperature : float = 0.9,
+            frequency_penalty : float = 0,
+            presence_penalty : float = 0,
+            no_penalty_tokens : List[int] = [],
+            filter_tokens : List[int] = []
+        ):
+        self.free()
+
+        with self.device:
+            sampler = GenerateSampler(
+                self._ctx,
+                idx,
+                self._model.tokenizer.vocab_size,
+                top_n,
+                top_p,
+                temperature,
+                frequency_penalty,
+                presence_penalty,
+                no_penalty_tokens,
+                filter_tokens
+            )
+            hidden_enc = self._ctx.allocate((1, self._config.DIM_MODEL, len(idx)), np.float16)
+            self._model.embedding(
+                self._ctx,
+                np.array([idx], dtype=np.int32),
+                hidden_enc
+            )
+            mask_enc = (np.arange(len(idx)) < input_length)[np.newaxis, :]
+            self._model.encode(
+                self._ctx,
+                hidden_enc,
+                mask_enc
+            )
+
+            buffer_len = 0
+            dec_pos = 0
+            buffer_k_self = None
+            buffer_v_self = None
+            buffer_k_cros = self._model.allocate_decode_buffer(self._ctx, 1, hidden_enc.shape[-1])
+            buffer_v_cros = self._model.allocate_decode_buffer(self._ctx, 1, hidden_enc.shape[-1])
+
+        last_ipt = start_token
+        while max_length is None or dec_pos < max_length:
+            with self.device:
+                if dec_pos >= buffer_len:
+                    # need new buffer
+                    nw_buffer_len = buffer_len + 64
+                    nw_buffer_k_self = self._model.allocate_decode_buffer(self._ctx, 1, nw_buffer_len)
+                    if buffer_k_self is not None:
+                        for old, nw in zip(buffer_k_self, nw_buffer_k_self):
+                            ck.utils.copy_extend_buffer(
+                                nw.shape[1], old.shape[2] * old.shape[3], nw.shape[2] * nw.shape[3],
+                                old.ptr,
+                                nw.ptr,
+                                self._ctx.current_stream
+                            )
+                            self._ctx.free(old)
+                    buffer_k_self = nw_buffer_k_self
+
+                    nw_buffer_v_self = self._model.allocate_decode_buffer(self._ctx, 1, nw_buffer_len)
+                    if buffer_v_self is not None:
+                        for old, nw in zip(buffer_v_self, nw_buffer_v_self):
+                            ck.utils.copy_extend_buffer(
+                                nw.shape[1], old.shape[2] * old.shape[3], nw.shape[2] * nw.shape[3],
+                                old.ptr,
+                                nw.ptr,
+                                self._ctx.current_stream
+                            )
+                            self._ctx.free(old)
+                    buffer_v_self = nw_buffer_v_self
+                    buffer_len = nw_buffer_len
+                
+                hidden_dec = self._ctx.allocate((1, self._config.DIM_MODEL), np.float16)
+                self._model.embedding_step(self._ctx, np.array([last_ipt], dtype=np.int32), hidden_dec)
+                
+                logits = self._ctx.allocate((1, self._config.VOCAB_SIZE), np.float16)
+                self._model.decode_step(
+                    self._ctx,
+                    hidden_dec,
+                    hidden_enc if dec_pos == 0 else None, 
+                    mask_enc,
+                    buffer_k_self,
+                    buffer_v_self,
+                    buffer_k_cros,
+                    buffer_v_cros,
+                    dec_pos
+                )
+                self._model.projection_step(self._ctx, hidden_dec, logits)
+                if dec_pos == 0:
+                    self._ctx.free(hidden_enc)
+                self._ctx.free(hidden_dec)
+                dec_pos += 1
+
+                logits.reshape((self._config.VOCAB_SIZE,))
+                last_ipt = sampler.sample(logits)
+                self._ctx.free(logits)
+            yield last_ipt
+
+    def dialogue(self,
             context : List[str],
             max_tokens : int = 128,
             top_n : Optional[int] = 10,
@@ -76,9 +195,8 @@ class EVA(T5):
             frequency_penalty : float = 0,
             presence_penalty : float = 0,
             truncation_length : Optional[int] = 256
-        ):
-        """ Generate dialogue based on context.
-
+        ) -> Tuple[str, bool]:
+        """Generate dialogue based on context.
         Args:
             context: Context of the dialogue.
             max_tokens: Maximum tokens to generate.
@@ -91,36 +209,37 @@ class EVA(T5):
         Returns:
             A response generated by the model.
         """
-        idx = []
-        for sentence in context:
-            idx.extend( self.text_to_id(sentence) + [self.get_token_id("<sep>")] )
-        idx += [ self.get_token_id("<s_0>") ]
-        if truncation_length is not None and len(idx) > truncation_length:
-            idx = idx[-truncation_length:]
-        input_length = len(idx)
-        ctx = self.encode(np.array([idx], dtype=np.int64), [input_length])
-        self.init_decoder_context(ctx)
-
-        decoder_ipts = self.get_token_id("<s_0>")
-        sampler = GenerateSampler(
-            idx, 
-            self.tokenizer.vocab_size,
-            self.device,
+        idx, input_length = self._pre_processing(context, truncation_length)
+        res = self._gen_iter(
+            idx,
+            input_length,
             max_tokens,
+            self._model.tokenizer.get_span(0),
             top_n,
             top_p,
             temperature,
             frequency_penalty,
-            presence_penalty
+            presence_penalty,
+            filter_tokens=[self._model.tokenizer.unk_id]
         )
+        
+        blanks = []
+        stoped = False
 
-        ret = []
-        sep_id = self.get_token_id("<sep>")
-        for _ in range(max_tokens):
-            logits = self.decode_step(ctx, [decoder_ipts])[0]
-            decoder_ipts = sampler.sample(logits)
-            if decoder_ipts == sep_id:
+        sep_idx = self._model.tokenizer.convert_tokens_to_ids(["<sep>"])[0]
+
+        for token in res:
+            if token == sep_idx:
+                stoped = True
                 break
-            ret.append(decoder_ipts)
-            
-        return self.id_to_text(ret)
+            blanks.append(token)
+            if len(blanks) >= max_tokens:
+                break
+        self.free()
+        return self._model.tokenizer.decode(blanks), stoped
+
+    def free(self):
+        self._ctx.free_all()
+
+        
+

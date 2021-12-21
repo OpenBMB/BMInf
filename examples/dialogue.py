@@ -11,7 +11,7 @@ def main():
         if you == "你好":
             computer = "你好，我是EVA"
         else:
-            computer = eva.dialogue(context)
+            computer, _ = eva.dialogue(context)
         context.append(computer)
         print("EVA：", computer)
 

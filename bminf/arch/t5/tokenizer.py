@@ -13,8 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from collections import OrderedDict
+from typing import List
 from ...utils import jieba
-from ..seq2seq import Seq2SeqTokenizer
 
 class WordpieceTokenizer(object):
 
@@ -23,7 +23,7 @@ class WordpieceTokenizer(object):
         self.unk_token = unk_token
         self.max_input_chars_per_word = max_input_chars_per_word
 
-    def tokenize(self, word):
+    def tokenize(self, word) -> List[str]:
         if len(word) > self.max_input_chars_per_word:
             return [self.unk_token]
 
@@ -69,7 +69,7 @@ def read_vocab(path):
             ret[word] = len(ret)
     return ret
 
-class T5Tokenizer(Seq2SeqTokenizer):
+class T5Tokenizer:
 
     def __init__(self, vocab_path, max_len=None, max_sentinels=190):
         self.max_len = max_len if max_len is not None else int(1e12)
@@ -90,6 +90,18 @@ class T5Tokenizer(Seq2SeqTokenizer):
         return len(self.encoder)
     
     @property
+    def sod_token(self):
+        return "<s>"
+
+    @property
+    def eod_token(self):
+        return '<eod>'
+    
+    @property
+    def unk_token(self):
+        return "<unk>"
+        
+    @property
     def sod_id(self) -> int:
         return self.encoder[self.sod_token]
 
@@ -101,28 +113,27 @@ class T5Tokenizer(Seq2SeqTokenizer):
     def unk_id(self):
         return self.encoder[self.unk_token]
 
-    def tokenize(self, text):
+    def tokenize(self, text : str) -> List[str]:
         """ Tokenize a string. """
+        text = ''.join([Q2B(x) for x in text])
         output_tokens = []
         for x in jieba.cut(text, cut_all=False):
             x = x.translate(self.translator_enc)
             output_tokens.extend(self.wordpiece_tokenizer.tokenize(x))
         return output_tokens
 
-    def encode(self, text):
-        text = ''.join([Q2B(x) for x in text])
-        res = [self.encoder[x] for x in self.tokenize(text)]
-        return res
+    def encode(self, text : str) -> List[int]:
+        return self.convert_tokens_to_ids( self.tokenize(text) )
 
-    def decode(self, tokens):
+    def decode(self, tokens : List[int]) -> str:
         text = ''.join([self.decoder[x] for x in tokens])
         text = text.translate(self.translator_dec)
         return text
 
-    def convert_tokens_to_ids(self, tokens):
+    def convert_tokens_to_ids(self, tokens : List[str]) -> List[int]:
         return [self.encoder.get(x, self.unk_id) for x in tokens]
 
-    def convert_ids_to_tokens(self, ids):
+    def convert_ids_to_tokens(self, ids : List[int]) -> List[str]:
         return [self.decoder[x] for x in ids]
     
     def get_span(self, span_id) -> int:

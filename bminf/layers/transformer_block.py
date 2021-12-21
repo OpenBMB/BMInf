@@ -1,250 +1,440 @@
-from typing import List, Optional
+from typing import Optional
+from ..core import Layer, Context, Tensor, Parameter
+import numpy as np
+from cpm_kernels import kernels as ck
+from .layernorm import Layernorm
+from .attention import Attention
+from .feedforward import FeedForward
 
-import cupy
-from .base import Layer
-from .attention import SelfAttention, PartialAttention, GPTAttention
-from .dense_gelu_dense import DenseGeluDense, GPTDenseGeluDense
-from .layer_norm import LayerNorm, GPTLayerNorm
-from ..allocator import Allocator
-import logging
-logger = logging.getLogger(__name__)
 
-class TransformerBlockEncoder(Layer):
-    def __init__(self, dim_model, dim_ff, dim_qkv, num_heads):
-        self.dim_model = dim_model
-
-        self.layer_nrom_before_self_attn = LayerNorm(dim_model)
-        self.self_attention =  SelfAttention(dim_model, dim_qkv, num_heads)
-
-        self.layer_nrom_before_ff = LayerNorm(dim_model)
-        self.dense_gelu_dense = DenseGeluDense(dim_model, dim_ff)
-
-    def forward(self, allocator : Allocator, 
-            hidden_state : cupy.ndarray, 
-            attention_mask : cupy.ndarray,
-            self_attn_position_bias : Optional[cupy.ndarray] = None, 
-            inplace : bool = True
+class EncoderBlock(Layer):
+    def __init__(self, 
+            dim_model : int, num_heads : int, dim_head : int, dim_ff : int,
+            eps : float, bias : bool = False, gated : bool = True, attn_scale : float = 1
         ):
-        if not cupy.issubdtype(hidden_state.dtype, cupy.floating):
-            raise NotImplementedError("transformer block for integer input is not implemented")
+        super().__init__()
 
-        batch_size, dim_model, seq_len = hidden_state.shape
-        assert dim_model == self.dim_model
+        self.ln_attn = Layernorm(dim_model, eps, bias)
+        self.self_attn = Attention(dim_model, num_heads, dim_head, bias, attn_scale=attn_scale)
 
-        tensor_out = hidden_state
-        assert hidden_state.dtype == cupy.float16
-        logger.info("Encoder transformer block -- layer norm self-attn")
-        x = self.layer_nrom_before_self_attn.forward(allocator, hidden_state) # copy hidden state, e -> e
-        assert x.dtype == cupy.float16
-        assert x.shape == (batch_size, dim_model, seq_len)
-
-        logger.info("Encoder transformer block -- self attention")
-        x = self.self_attention.forward(allocator, x, attention_mask, self_attn_position_bias)
-        assert x.dtype == cupy.float16
-        assert x.shape == (batch_size, dim_model, seq_len)
-
-        if inplace:
-            tensor_out += x
-        else:
-            tensor_out = tensor_out + x # copied here
-
-        logger.info("Encoder transformer block -- layer norm ff")
-        x = self.layer_nrom_before_ff.forward(allocator, tensor_out)
-        assert x.dtype == cupy.float16
-        assert x.shape == (batch_size, dim_model, seq_len)
-
-        logger.info("Encoder transformer block -- ff")
-        x = self.dense_gelu_dense.forward(allocator, x)
-        assert x.dtype == cupy.float16
-        assert x.shape == (batch_size, dim_model, seq_len)
-
-        tensor_out += x
-        return tensor_out
-
-class TransformerBlockDecoder(Layer):
-    def __init__(self, dim_model, dim_ff, dim_qkv, num_heads):
-        self.dim_model = dim_model
-        self.num_heads = num_heads
-        self.dim_qkv = dim_qkv
-
-        self.layer_nrom_before_self_attn = LayerNorm(dim_model)
-        self.self_attention =  PartialAttention(dim_model, dim_qkv, num_heads, is_self_attn=True)
-
-        self.layer_nrom_before_cross_attn = LayerNorm(dim_model)
-        self.cross_attention = PartialAttention(dim_model, dim_qkv, num_heads, is_self_attn=False)
-
-        self.layer_nrom_before_ff = LayerNorm(dim_model)
-        self.dense_gelu_dense = DenseGeluDense(dim_model, dim_ff)
-
-    def forward(self, allocator : Allocator, 
-            curr_hidden_state : cupy.ndarray,   # (batch, dim_model)
-            past_kv : cupy.ndarray,             # (2, batch, num_heads, dim_kv, max_decoder_length)
-            decoder_length : int,               # int
-            encoder_mask : cupy.ndarray,        # (batch, encoder_len)
-            encoder_kv : cupy.ndarray,          # (2, batch, num_heads, dim_kv, seq_ipt_len)
-            self_attn_position_bias : Optional[cupy.ndarray] = None, # (1, num_heads, max_decoder_length, max_decoder_length)
-            inplace : bool = True,
-        ):
-
-        # ==================================
-        # check shapes
-
-        batch_size, dim_model = curr_hidden_state.shape
-        assert dim_model == self.dim_model
-        assert curr_hidden_state.dtype == cupy.float16
-
-        max_decoder_length = past_kv.shape[-1]
-        assert past_kv.shape == (2, batch_size, self.num_heads, self.dim_qkv, max_decoder_length)
-        assert past_kv.dtype == cupy.float16
-
-        encoder_len = encoder_kv.shape[-1]
-        assert encoder_kv.shape == (2, batch_size, self.num_heads, self.dim_qkv, encoder_len)
-        assert encoder_mask.shape == (batch_size, encoder_len)
-        assert encoder_kv.dtype == cupy.float16
-
-        # ==================================
-        # self attention
-        logger.info("Decoder transformer block -- layer norm self-attn")
-        normalized_hidden = self.layer_nrom_before_self_attn.forward(allocator, curr_hidden_state[:, :, cupy.newaxis])[:, :, 0]
-
-
-        assert normalized_hidden.shape == (batch_size, dim_model)
-        logger.info("Decoder transformer block -- self attention")
-        attn_out = self.self_attention.forward(
-            allocator,
-            normalized_hidden,  # (batch, dim_model)
-            past_kv,            # (batch, 2, num_heads, dim_qkv, max_decoder_length)
-            self_attn_position_bias[:, :, :, decoder_length],   # (1, num_heads, max_decoder_length)
-            (cupy.arange(max_decoder_length) <= decoder_length)[cupy.newaxis],   # (1#batch_size, max_decoder_length)
-            decoder_length,
-        )
-        assert attn_out.shape == (batch_size, dim_model)
-        if inplace:
-            curr_hidden_state += attn_out
-        else:
-            curr_hidden_state = curr_hidden_state + attn_out
-        
-        # ==================================
-        # cross attention
-        logger.info("Decoder transformer block -- layer norm cross-attn")
-        normalized_hidden = self.layer_nrom_before_cross_attn.forward(allocator, curr_hidden_state[:, :, cupy.newaxis])[:, :, 0]
-
-        assert normalized_hidden.shape == (batch_size, dim_model)
-        logger.info("Decoder transformer block -- cross attention")
-        attn_out = self.cross_attention.forward(
-            allocator,
-            normalized_hidden,
-            encoder_kv,     # (batch, 2, num_heads, dim_qkv, encoder_len)
-            None,
-            encoder_mask,   # (batch, encoder_len)
-            None
-        )
-        assert attn_out.shape == (batch_size, dim_model)
-
-        curr_hidden_state += attn_out
-
-        logger.info("Decoder transformer block -- layer norm ff")
-        normalized_hidden = self.layer_nrom_before_ff.forward(allocator, curr_hidden_state[:, :, cupy.newaxis])
-        assert normalized_hidden.shape == (batch_size, dim_model, 1)
-        
-        logger.info("Decoder transformer block -- ff")
-        ff_out = self.dense_gelu_dense.forward(allocator, normalized_hidden)
-        assert ff_out.shape == (batch_size, dim_model, 1)
-        curr_hidden_state += ff_out[:, :, 0]
-        return curr_hidden_state
-        
-
-class TransformerBlockGPT(Layer):
-    def __init__(self, dim_model, dim_ff, dim_qkv, num_heads):
-        self.dim_model = dim_model
-        self.num_heads = num_heads
-        self.dim_qkv = dim_qkv
-
-        self.layer_nrom_before_self_attn = GPTLayerNorm(dim_model)
-        self.self_attention = GPTAttention(dim_model, dim_qkv, num_heads)
-
-        self.layer_nrom_before_ff = GPTLayerNorm(dim_model)
-        self.dense_gelu_dense = GPTDenseGeluDense(dim_model, dim_ff)
-
-    def forward(self, allocator : Allocator, 
-            hidden_state : cupy.ndarray, 
-            attention_mask : cupy.ndarray,
-            past_kv : cupy.ndarray,
-            inplace : bool = True
-        ):
-        if not cupy.issubdtype(hidden_state.dtype, cupy.floating):
-            raise NotImplementedError("transformer block for integer input is not implemented")
-        batch_size, dim_model, seq_len = hidden_state.shape
-        assert dim_model == self.dim_model
-
-        tensor_out = hidden_state
-        assert hidden_state.dtype == cupy.float16
-        logger.info("Encoder transformer block -- layer norm self-attn")
-        x = self.layer_nrom_before_self_attn.forward(allocator, hidden_state) # copy hidden state, e -> e
-        assert x.dtype == cupy.float16
-        assert x.shape == (batch_size, dim_model, seq_len)
-
-        logger.info("Encoder transformer block -- self attention")
-        x = self.self_attention.forward(allocator, x, attention_mask, past_kv)
-        assert x.dtype == cupy.float16
-        assert x.shape == (batch_size, dim_model, seq_len)
-        if inplace:
-            tensor_out += x
-        else:
-            tensor_out = tensor_out + x # copied here
-        logger.info("Encoder transformer block -- layer norm ff")
-        x = self.layer_nrom_before_ff.forward(allocator, tensor_out)
-        assert x.dtype == cupy.float16
-        assert x.shape == (batch_size, dim_model, seq_len)
-
-        logger.info("Encoder transformer block -- ff")
-        x = self.dense_gelu_dense.forward(allocator, x)
-        assert x.dtype == cupy.float16
-        assert x.shape == (batch_size, dim_model, seq_len)
-
-        tensor_out += x
-        return tensor_out
+        self.ln_ff = Layernorm(dim_model, eps, bias)
+        self.ff = FeedForward(dim_model, dim_ff, bias, gated)
     
-    def forward_partial(self, allocator : Allocator, 
-            curr_hidden_state : cupy.ndarray,   # (batch, dim_model)
-            decoder_length : List[int],         # int
-            past_kv : cupy.ndarray,             # (2, batch, num_heads, dim_kv, max_length)
-            past_kv_mask : cupy.ndarray,        # (1#batch, past_kv_len)
-            inplace : bool = True,
+    def forward(self, 
+            ctx : Context, 
+            x : Tensor, 
+            position_bias : Optional[Tensor],
+            mask : Tensor,
+            x_out : Tensor, 
         ):
+        batch, dim_model, seq_len = x.shape
 
-        batch_size, dim_model = curr_hidden_state.shape
-        assert dim_model == self.dim_model
-        max_length = past_kv.shape[-1]
-        assert past_kv.shape == (2, batch_size, self.num_heads, self.dim_qkv, max_length)
+        x_mid = ctx.allocate(x.shape, x.dtype)
+        self.ln_attn.forward(ctx, x, x_mid)
+        self.self_attn.forward(ctx, x_mid, x_mid, mask, position_bias, x_mid)
+        ck.arith_element_add(
+            batch, dim_model * seq_len,
+            x.ptr, x_mid.ptr,
+            x_out.ptr,
+            ctx.current_stream
+        )
+
+        self.ln_ff.forward(ctx, x_out, x_mid)
+        self.ff.forward(ctx, x_mid, x_mid)
+        ck.arith_element_add(
+            batch, dim_model * seq_len,
+            x_out.ptr, x_mid.ptr,
+            x_out.ptr,
+            ctx.current_stream
+        )
+        ctx.free(x_mid)
+    
+    def backward(self,
+            ctx : Context,
+            x : Tensor,         # (batch, dim_model, seq_q)
+            position_bias : Optional[Tensor],
+            mask : Tensor,
+            accum_grad : Tensor
+        ):
+        batch, dim_model, seq_len = x.shape
+
+        x_mid_1 = ctx.allocate((batch, dim_model, seq_len), np.float16)
+        self.ln_attn.forward(ctx, x, x_mid_1)
+
+        x_mid_2 = ctx.allocate((batch, dim_model, seq_len), np.float16)
+        self.self_attn.forward(ctx, x_mid_1, x_mid_1, mask, position_bias, x_mid_2)
+
+        ck.arith_element_add(
+            batch, dim_model * seq_len,
+            x.ptr, x_mid_2.ptr,
+            x_mid_2.ptr,
+            ctx.current_stream
+        )
+        x_mid_3 = ctx.allocate((batch, dim_model, seq_len), np.float16)
+        self.ln_ff.forward(ctx, x_mid_2, x_mid_3)
+
+        # start backward
+
+        grad_tmp = ctx.allocate((batch, dim_model, seq_len), np.float16)
+        grad_tmp.zero_(ctx)
+        self.ff.backward(ctx, x_mid_3, accum_grad, grad_tmp)
+        ctx.free(x_mid_3)
+
+        self.ln_ff.backward(ctx, x_mid_2, grad_tmp, accum_grad)
+        ctx.free(x_mid_2)
+
+        grad_tmp.zero_(ctx)
+        self.self_attn.backward(
+            ctx,
+            x_mid_1, x_mid_1, mask, position_bias,
+            accum_grad, grad_tmp, grad_tmp
+        )
+        ctx.free(x_mid_1)
+        self.ln_attn.backward(ctx, x, grad_tmp, accum_grad)
+        ctx.free(grad_tmp)
+
+
+class DecoderBlock(Layer):
+    def __init__(self, 
+            dim_model : int, num_heads : int, dim_head : int, dim_ff : int,
+            eps : float, bias : bool = False, gated : bool = True, attn_scale : float = 1,
+        ):
+        super().__init__()
+
+        self.ln_attn = Layernorm(dim_model, eps, bias)
+        self.self_attn = Attention(dim_model, num_heads, dim_head, bias, attn_scale=attn_scale)
+
+        self.ln_ff = Layernorm(dim_model, eps, bias)
+        self.ff = FeedForward(dim_model, dim_ff, bias, gated)
+    
+    def forward(self, 
+            ctx : Context, 
+            x : Tensor,                 # (batch, dim_model, seq_q)
+            mask_x : Tensor,            # (batch, seq_q, seq_q)
+            bias_self : Optional[Tensor],   # (num_heads, seq_q, seq_q)
+            x_out : Tensor, 
+            key_out : Optional[Tensor] = None,      # (batch, num_head, seq_q, dim_head)
+            value_out : Optional[Tensor] = None,    # (batch, num_head, seq_q, dim_head)
+        ):
+        batch, dim_model, seq_len = x.shape
+
+        x_mid = ctx.allocate(x.shape, x.dtype)
+        self.ln_attn.forward(ctx, x, x_mid)
+        self.self_attn.forward(ctx, x_mid, x_mid, mask_x, bias_self, x_mid, key_out, value_out)
+
+        ck.arith_element_add(
+            batch, dim_model * seq_len,
+            x.ptr, x_mid.ptr,
+            x_out.ptr,
+            ctx.current_stream
+        )
+
+        self.ln_ff.forward(ctx, x_out, x_mid)
+        self.ff.forward(ctx, x_mid, x_mid)
+        ck.arith_element_add(
+            batch, dim_model * seq_len,
+            x_out.ptr, x_mid.ptr,
+            x_out.ptr,
+            ctx.current_stream
+        )
+        ctx.free(x_mid)
+
+    def step(self, 
+            ctx : Context, 
+            x : Tensor,                     # (batch, dim_model)
+            mask_x : Tensor,                # (batch, kv_buffer_len)
+            bias_self : Optional[Tensor],   # (num_heads, kv_buffer_len)
+            past_k : Tensor,                # (batch, num_heads, kv_buffer_len, dim_head)
+            past_v : Tensor,                # (batch, num_heads, kv_buffer_len, dim_head)
+            step_pos : int,
+            x_out : Tensor,                 # (batch, dim_model)
+        ):
+        batch, dim_model = x.shape
+        assert past_k.shape == past_v.shape
+        assert past_k.shape[0] == batch
+        kv_buffer_len = past_k.shape[2]
+        assert mask_x.shape == (batch, kv_buffer_len)
+        assert kv_buffer_len > step_pos
+
+        x_mid = ctx.allocate(x.shape, x.dtype)
+        self.ln_attn.step(ctx, x, x_mid)
+        self.self_attn.step(
+            ctx, x_mid, past_k, past_v,
+            mask_x, bias_self,
+            x_mid,
+            True, step_pos
+        )
+
+        ck.arith_element_add(
+            batch, dim_model,
+            x.ptr, x_mid.ptr,
+            x_out.ptr,
+            ctx.current_stream
+        )
+
+        self.ln_ff.step(ctx, x_out, x_mid)
+        self.ff.step(ctx, x_mid, x_mid)
+
+        ck.arith_element_add(
+            batch, dim_model,
+            x_out.ptr, x_mid.ptr,
+            x_out.ptr,
+            ctx.current_stream
+        )
+        ctx.free(x_mid)
+    
+    def backward(self,
+            ctx : Context,
+            x : Tensor,                     # (batch, dim_model, seq_q)
+            mask_x : Tensor,                # (batch, seq_q, seq_q)
+            bias_self : Optional[Tensor],   # (num_heads, seq_q, seq_q)
+            accum_grad : Tensor             # (batch, dim_model, seq_q)
+        ):
         
-        tensor_out = curr_hidden_state
-        assert curr_hidden_state.dtype == cupy.float16
-        logger.info("GPT-partial transformer block -- layer norm self-attn")
-        x = self.layer_nrom_before_self_attn.forward(allocator, curr_hidden_state[:, :, cupy.newaxis])[:, :, 0] # copy hidden state, e -> e
-        assert x.dtype == cupy.float16
-        assert x.shape == (batch_size, dim_model)
+        batch, dim_model, seq_len = x.shape
 
-        logger.info("GPT-partial transformer block -- self attention")
+        x_mid_1 = ctx.allocate(x.shape, x.dtype)
+        self.ln_attn.forward(ctx, x, x_mid_1)
 
-        x = self.self_attention.forward_partial(allocator, x, past_kv, past_kv_mask, decoder_length)
-        assert x.dtype == cupy.float16
-        assert x.shape == (batch_size, dim_model)
+        x_mid_2 = ctx.allocate(x.shape, x.dtype)
+        self.self_attn.forward(ctx, x_mid_1, x_mid_1, mask_x, bias_self, x_mid_2)
 
-        if inplace:
-            tensor_out += x
-        else:
-            tensor_out = tensor_out + x # copied here
+        ck.arith_element_add(
+            batch, dim_model * seq_len,
+            x.ptr, x_mid_2.ptr,
+            x_mid_2.ptr,
+            ctx.current_stream
+        )
 
-        logger.info("Encoder transformer block -- layer norm ff")
-        x = self.layer_nrom_before_ff.forward(allocator, tensor_out[:, :, cupy.newaxis])
-        assert x.dtype == cupy.float16
-        assert x.shape == (batch_size, dim_model, 1)
+        x_mid_3 = ctx.allocate(x.shape, x.dtype)
+        self.ln_ff.forward(ctx, x_mid_2, x_mid_3)
+        
+        # start backward
 
-        logger.info("Encoder transformer block -- ff")
-        x = self.dense_gelu_dense.forward(allocator, x)
-        assert x.dtype == cupy.float16
-        assert x.shape == (batch_size, dim_model, 1)
+        grad_tmp = ctx.allocate(x.shape, x.dtype)
+        grad_tmp.zero_(ctx)
 
-        tensor_out += x[:, :, 0]
-        return tensor_out
+        self.ff.backward(ctx, x_mid_3, accum_grad, grad_tmp)
+        ctx.free(x_mid_3)
+
+        self.ln_ff.backward(ctx, x_mid_2, grad_tmp, accum_grad)
+        ctx.free(x_mid_2)
+
+        grad_tmp.zero_(ctx)
+        self.self_attn.backward(ctx,
+            x_mid_1, x_mid_1, mask_x, bias_self, accum_grad,
+            grad_tmp, grad_tmp
+        )
+        ctx.free(x_mid_1)
+
+        self.ln_attn.backward(ctx, x, grad_tmp, accum_grad)
+        ctx.free(grad_tmp)
+
+class DecoderBlockWithCrossAttention(Layer):
+    def __init__(self, 
+            dim_model : int, num_heads : int, dim_head : int, dim_ff : int,
+            eps : float, bias : bool = False, gated : bool = True, attn_scale : float = 1
+        ):
+        super().__init__()
+
+        self.ln_attn = Layernorm(dim_model, eps, bias)
+        self.self_attn = Attention(dim_model, num_heads, dim_head, bias, attn_scale=attn_scale)
+
+        self.ln_cross_attn = Layernorm(dim_model, eps, bias)
+        self.cross_attn = Attention(dim_model, num_heads, dim_head, bias, attn_scale=attn_scale)
+
+        self.ln_ff = Layernorm(dim_model, eps, bias)
+        self.ff = FeedForward(dim_model, dim_ff, bias, gated)
+    
+    def forward(self, 
+            ctx : Context, 
+            x : Tensor,                 # (batch, dim_model, seq_q)
+            encoder_output : Tensor,    # (batch, dim_model, seq_k)
+            mask_x : Tensor,            # (batch, seq_q, seq_q)
+            mask_cross : Tensor,        # (batch, seq_k, seq_q)
+            bias_self : Optional[Tensor],   # (num_heads, seq_q, seq_q)
+            bias_cross: Optional[Tensor],   # (num_heads, seq_k, seq_q)
+            x_out : Tensor, 
+        ):
+        batch, dim_model, seq_len = x.shape
+
+        x_mid = ctx.allocate(x.shape, x.dtype)
+        self.ln_attn.forward(ctx, x, x_mid)
+        self.self_attn.forward(ctx, x_mid, x_mid, mask_x, bias_self, x_mid)
+        ck.arith_element_add(
+            batch, dim_model * seq_len,
+            x.ptr, x_mid.ptr,
+            x_out.ptr,
+            ctx.current_stream
+        )
+
+        self.ln_cross_attn.forward(ctx, x_out, x_mid)
+        self.cross_attn.forward(ctx, x_mid, encoder_output, mask_cross, bias_cross, x_mid)
+        ck.arith_element_add(
+            batch, dim_model * seq_len,
+            x_out.ptr, x_mid.ptr,
+            x_out.ptr,
+            ctx.current_stream
+        )
+
+        self.ln_ff.forward(ctx, x_out, x_mid)
+        self.ff.forward(ctx, x_mid, x_mid)
+        ck.arith_element_add(
+            batch, dim_model * seq_len,
+            x_out.ptr, x_mid.ptr,
+            x_out.ptr,
+            ctx.current_stream
+        )
+        ctx.free(x_mid)
+
+    def step(self, 
+            ctx : Context, 
+            x : Tensor,                         # (batch, dim_model)
+            encoder_output : Optional[Tensor],  # (batch, dim_model, seq_k) can be None if step_pos >
+            mask_x : Tensor,                    # (batch, buffer_len)
+            mask_cross : Tensor,                # (batch, seq_k)
+            bias_self : Optional[Tensor],       # (num_heads, buffer_len)
+            bias_cross : Optional[Tensor],      # (num_heads, seq_k)
+
+            # buffers
+            past_k_self : Tensor,               # (batch, num_heads, buffer_len, dim_head)
+            past_v_self : Tensor,               # (batch, num_heads, buffer_len, dim_head)
+            past_k_cros : Tensor,               # (batch, num_heads, seq_k, dim_head)
+            past_v_cros : Tensor,               # (batch, num_heads, seq_k, dim_head)
+
+            step_pos : int,
+            x_out : Tensor,                     # (batch, dim_model)
+        ):
+        batch, dim_model = x.shape
+        assert step_pos > 0 or (encoder_output is not None and encoder_output.shape[:2] == (batch, dim_model))
+        assert past_k_self.shape == past_v_self.shape
+        assert past_k_cros.shape == past_v_cros.shape
+        assert past_k_cros.shape[2] == mask_cross.shape[1]
+        assert past_k_self.shape[:2] == past_k_cros.shape[:2]
+
+        x_mid = ctx.allocate(x.shape, x.dtype)
+        self.ln_attn.step(ctx, x, x_mid)
+        self.self_attn.step(
+            ctx, 
+            x_mid, past_k_self, past_v_self,
+            mask_x, bias_self,
+            x_mid,
+            True, step_pos
+        )
+        ck.arith_element_add(
+            batch, dim_model,
+            x.ptr, x_mid.ptr,
+            x_out.ptr,
+            ctx.current_stream
+        )
+
+        if step_pos == 0:
+            # init past_kv_cros for the first step
+            assert encoder_output is not None
+            self.cross_attn.init_kv(
+                ctx,
+                encoder_output,
+                past_k_cros, past_v_cros
+            )
+
+        self.ln_cross_attn.step(ctx, x_out, x_mid)
+        self.cross_attn.step(
+            ctx,
+            x_mid, past_k_cros, past_v_cros,
+            mask_cross, bias_cross,
+            x_mid,
+            False, step_pos
+        )
+        ck.arith_element_add(
+            batch, dim_model,
+            x_out.ptr, x_mid.ptr,
+            x_out.ptr,
+            ctx.current_stream
+        )
+
+        self.ln_ff.step(ctx, x_out, x_mid)
+        self.ff.step(ctx, x_mid, x_mid)
+        ck.arith_element_add(
+            batch, dim_model,
+            x_out.ptr, x_mid.ptr,
+            x_out.ptr,
+            ctx.current_stream
+        )
+        ctx.free(x_mid)
+    
+    def backward(self,
+            ctx : Context,
+            x : Tensor,                 # (batch, dim_model, seq_q)
+            encoder_output : Tensor,    # (batch, dim_model, seq_k)
+            mask_x : Tensor,            # (batch, seq_q, seq_q)
+            mask_cross : Tensor,        # (batch, seq_k, seq_q)
+            bias_self : Optional[Tensor],   # (num_heads, seq_q, seq_q)
+            bias_cross: Optional[Tensor],   # (num_heads, seq_k, seq_q)
+            accum_grad : Tensor,
+            encoder_grad : Tensor
+        ):
+        batch, dim_model, seq_len = x.shape
+
+        x_mid_1 = ctx.allocate((batch, dim_model, seq_len), np.float16)
+
+        self.ln_attn.forward(ctx, x, x_mid_1)
+
+        x_mid_2 = ctx.allocate((batch, dim_model, seq_len), np.float16)
+        self.self_attn.forward(
+            ctx, x_mid_1, x_mid_1, mask_x, bias_self, x_mid_2
+        )
+        
+        ck.arith_element_add(
+            batch, dim_model * seq_len,
+            x.ptr, x_mid_2.ptr,
+            x_mid_2.ptr,
+            ctx.current_stream
+        )
+
+        x_mid_3 = ctx.allocate((batch, dim_model, seq_len), np.float16)
+        self.ln_cross_attn.forward(ctx, x_mid_2, x_mid_3)
+
+        x_mid_4 = ctx.allocate((batch, dim_model, seq_len), np.float16)
+        self.cross_attn.forward(
+            ctx, x_mid_3, encoder_output, mask_cross, bias_cross, x_mid_4
+        )
+        ck.arith_element_add(
+            batch, dim_model * seq_len,
+            x_mid_2.ptr, x_mid_4.ptr,
+            x_mid_4.ptr,
+            ctx.current_stream
+        )
+
+        x_mid_5 = ctx.allocate((batch, dim_model, seq_len), np.float16)
+        self.ln_ff.forward(ctx, x_mid_4, x_mid_5)
+
+        # start backward
+
+        grad_tmp = ctx.allocate((batch, dim_model, seq_len), np.float16)
+
+        grad_tmp.zero_(ctx)
+        self.ff.backward(ctx, x_mid_5, accum_grad, grad_tmp)
+        ctx.free(x_mid_5)
+        
+        self.ln_ff.backward(ctx, x_mid_4, grad_tmp, accum_grad)
+        ctx.free(x_mid_4)
+
+        grad_tmp.zero_(ctx)
+        self.cross_attn.backward(
+            ctx, x_mid_3, encoder_output, mask_cross, bias_cross, 
+            accum_grad, grad_tmp, encoder_grad
+        )
+        ctx.free(x_mid_3)
+        
+        self.ln_cross_attn.backward(ctx, x_mid_2, grad_tmp, accum_grad)
+        ctx.free(x_mid_2)
+
+        grad_tmp.zero_(ctx)
+        self.self_attn.backward(
+            ctx, x_mid_1, x_mid_1, mask_x, bias_self,
+            accum_grad, grad_tmp, grad_tmp
+        )
+        ctx.free(x_mid_1)
+
+        self.ln_attn.backward(ctx, x, grad_tmp, accum_grad)
+        ctx.free(grad_tmp)

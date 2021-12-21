@@ -1,176 +1,294 @@
-from typing import List, Tuple, Union
-import cupy
-from ..lm import LMModel
-from ...layers.lm_head import LMHead
-from ...layers.transformer_block import TransformerBlockGPT
-from ...layers.embedding import Embedding
-from ...layers.layer_norm import GPTLayerNorm
-from ...layers.mask import InputMask
-from ...layers.layer_list import LayerList
-from .config import GPTConfiguration
-from .tokenizer import GPT2Tokenizer
-from .context import GPTInferenceContext
-from ...allocator import ReusedAllocator, SizeLimitedAllocator
-import numpy as np
 import logging
+from typing import List, Optional
+from .config import GPTConfiguration
+from ...core import Model, Layer, Context, Tensor, Device
+from ...core.allocators.cuda import CUDAAllocator
+from ...layers import Embedding, LayerList, Layernorm, DecoderBlock
+from ..scheduler import LayerScheduler, calc_fixed_layers
+from .tokenizer import GPT2Tokenizer
+import cpm_kernels.kernels as ck
+import numpy as np
+import math
 from ... import data
 
 logger = logging.getLogger(__name__)
 
-class GPT(LMModel):
+class GPT2Model(Model):
     def __init__(self, config : GPTConfiguration):
-        # Build Model
-        logger.info("Building model")
-        
-        self.max_overlap_layers = config.NUM_LAYERS
-        self.max_length = config.MAX_LENGTH
-        self.dim_model = config.DIM_MODEL
+        super().__init__()
 
-        logger.info("============ GPT ==============")
-        logger.info("MAX_LENGTH: %s", self.max_length)
+        self.config = config
+        if self.config.DEVICE is None:
+            device = Device.current()
+        else:
+            device = Device(self.config.DEVICE)
+        self.device = device
+        self.allocator = CUDAAllocator(self.device.idx)
+        self.num_layers = self.config.NUM_LAYERS
 
-        self.input_embedding = Embedding(config.VOCAB_SIZE, config.DIM_MODEL)
+        self.token_embedding = Embedding(config.VOCAB_SIZE, config.DIM_MODEL)
         self.position_embedding = Embedding(config.MAX_LENGTH, config.DIM_MODEL)
-        self.input_mask = InputMask(is_decoder=True)
+        self.layernorm = Layernorm(config.DIM_MODEL, config.EPS, bias=True)
 
-        self._lmhead = LMHead(config.VOCAB_SIZE, config.DIM_MODEL)
-        self._lmhead.weight = self.input_embedding.weight   # share parameter
-
-        self.num_layers = config.NUM_LAYERS
         self.layers = LayerList([
-            TransformerBlockGPT(config.DIM_MODEL, config.DIM_FF, config.DIM_KV, config.NUM_HEADS)
-            for _ in range(self.num_layers)
-        ])
-        
-        self.encoder_final_layer_nrom = GPTLayerNorm(config.DIM_MODEL)
-        self.num_heads = config.NUM_HEADS
-        self.dim_qkv = config.DIM_KV
+            DecoderBlock(config.DIM_MODEL, config.NUM_HEADS, config.DIM_HEAD, config.DIM_FF, config.EPS, bias=True, gated=False, attn_scale=1.0/math.sqrt(config.DIM_HEAD))
+                for _ in range(self.num_layers)
+        ], offset=False)
+        self.max_block_nbytes = self.layers[0].nbytes
+        fixed_layers : List[Layer] = [ self.token_embedding, self.position_embedding, self.layernorm ]
 
         if config.MODEL_NAME is not None:
-            # init parameter
+            fixed_size = sum([x.nbytes for x in fixed_layers])
+            if config.MEMORY_LIMIT is None:
+                config.MEMORY_LIMIT = min(device.free_memory, self.nbytes)
+            layers_memory_limit = config.MEMORY_LIMIT - fixed_size
+            max_layers_in_memory = layers_memory_limit // self.max_block_nbytes
+
+            if max_layers_in_memory < 2:
+                raise RuntimeError("CUDA Error: out of memory: at least %d" % (self.max_block_nbytes * 2))
+            swap_buffers = 2
+            if max_layers_in_memory >= self.num_layers:
+                swap_buffers = 0
+            num_fixed_layers = max_layers_in_memory - swap_buffers
+            
+            logger.info("========= GPT =========")
+            logger.info("Total layers: %d" , self.num_layers)
+            logger.info("OnDev layers: %d", max_layers_in_memory)
+            logger.info("Fixed layers: %s", calc_fixed_layers(self.num_layers, num_fixed_layers) )
+
+            for layer_id in calc_fixed_layers(self.num_layers, num_fixed_layers):
+                self.layers[layer_id].is_fixed = True
+            for layer in fixed_layers:
+                layer.init_data(pinned=False)
+            for i in range(self.num_layers):
+                if self.layers[i].is_fixed:
+                    self.layers[i].init_data(pinned=False)
+                else:
+                    self.layers[i].init_data(pinned=True)
+                self.layers[i].locked = False
+                self.layers[i].on_device = False
+                self.layers[i].loader_event = device.create_event()
 
             model_path = data.ensure_file(config.MODEL_NAME, "checkpoint.pt")
             vocab_path = data.ensure_file(config.MODEL_NAME, "vocab.txt")
 
             self.tokenizer = GPT2Tokenizer(vocab_path)
+            self.load(open(model_path, "rb"))
 
-            self.device = config.DEVICE
-            with self.device:
-                logger.info("Start loading parameters from disk to cpu")
-                self.load( open(model_path, "rb") )
-
-                logger.info("Start loading parameters from cpu to gpu")
-                
-                load_stream = cupy.cuda.Stream()
-                if self.nbytes + config.DYNAMIC_MEMORY > config.MEMORY_LIMIT:
-                    raise ValueError("memory limit not enough, at least %d bytes, but got %d bytes" % (self.nbytes + config.DYNAMIC_MEMORY, config.MEMORY_LIMIT))
-                
-                logger.info("Using static loader: total: %d, dynamic_memory %d, memory_limit %d", self.nbytes, config.DYNAMIC_MEMORY, config.MEMORY_LIMIT)
-                self.parameter_allocator = ReusedAllocator(self.nbytes)
-                self.variable_allocator = SizeLimitedAllocator(config.MEMORY_LIMIT - self.nbytes)
-
-                self.to_device(self.parameter_allocator, load_stream)
-                
-                self.device.synchronize()
-                self.calc_stream = cupy.cuda.Stream(non_blocking=True)
-                with self.calc_stream:
-                    self.variable_allocator.alloc(config.DYNAMIC_MEMORY) # preallocate
-                self.device.synchronize()
-
-            logger.info("Cleaning useless parameters on cpu")
-            self._remove_data()
-            logger.info("End of model initialization")
-
-    def encode(self, input_idx : np.ndarray, input_length : List[int]) -> Tuple[cupy.ndarray, GPTInferenceContext]:
-        with self.device:
-            calc_stream = self.calc_stream
-
-            batch_size, seq_len = input_idx.shape
-            with calc_stream:
-                x = self.input_embedding.forward(self.variable_allocator, input_idx)
-                encoder_attn_mask = self.input_mask.forward(self.variable_allocator, input_length, seq_len)
-                x = x.transpose((0, 2, 1))      # (batch_size, dim_model, seq_len)
-                assert x.dtype == cupy.float16
-
-                x_pos = self.position_embedding.forward(self.variable_allocator, list(range(seq_len)))  # (seq_len, dim_model)
-                x_pos = x_pos.T[cupy.newaxis]   # (1#batch_size, dim_model, seq_len)
-                assert x_pos.shape == (1, self.dim_model, seq_len)
-                assert x_pos.dtype == cupy.float16
-
-                x += x_pos
-
-                past_kv = self.variable_allocator.alloc_array((self.num_layers, 2, batch_size, self.num_heads, self.dim_qkv, self.max_length), dtype=cupy.float16)
-                past_kv[:] = 0
-
+            for layer in fixed_layers:
+                layer.is_fixed = True
+                layer.locked = False
+                layer.on_device = True
+                with device:
+                    device_ptr = self.allocator.allocate(layer.nbytes)
+                    layer._to_device(device_ptr)
+                layer.data = None
             for i in range(self.num_layers):
-                logger.info("Calc encoder layer %d", i)
-                with calc_stream:
-                    x = self.layers[i].forward(
-                        self.variable_allocator, 
-                        x,
-                        encoder_attn_mask,
-                        past_kv[i],
-                        True
-                    )
-            with calc_stream:
-                x = self.encoder_final_layer_nrom.forward(self.variable_allocator, x)
-                last_out = []
-                for i, pos in enumerate(input_length):
-                    last_out.append( x[i, :, pos - 1] )
-                last_out = cupy.stack(last_out)
-                x = self._lmhead.forward(self.variable_allocator, last_out)
-            calc_stream.synchronize()
-            return x, GPTInferenceContext(past_kv, input_length)    # (batch, dim_model, seq_len)
-    
-    def decode_step(self,
-            ctx : GPTInferenceContext,
-            inputs : Union[List[int], np.ndarray]
-        ) -> cupy.ndarray:
-        past_kv = ctx.past_kv
-        input_length = ctx.input_length
-        step_input = inputs
-
-        with self.device:
-            calc_stream = self.calc_stream
-
-            with calc_stream:
-                x = self.input_embedding.forward(self.variable_allocator, step_input)    # (batch, dim_model)
-                past_kv_mask = cupy.repeat(cupy.arange(self.max_length)[cupy.newaxis], len(inputs), axis=0)
-                past_kv_mask = (past_kv_mask <= cupy.array(input_length, dtype=cupy.int64)[:, cupy.newaxis]) # (batch, max_len)
-                x_pos = self.position_embedding.forward(self.variable_allocator, input_length)  # (batch, dim_model)
-                x += x_pos
-            for i in range(self.num_layers):
-                logger.info("Calc decoder layer %d", i)
-
-                with calc_stream:
-                    x = self.layers[i].forward_partial(
-                        self.variable_allocator,
-                        x,                          # (batch, dim_model)
-                        input_length,               # List[int]
-                        past_kv[i],                 # (2, batch, num_heads, dim_qkv, max_length)
-                        past_kv_mask,               # (batch, max_length)
-                        True
-                    )
-            with calc_stream:
-                x = self.encoder_final_layer_nrom.forward(self.variable_allocator, x[:, :, cupy.newaxis])[:, :, 0]
-                x = self._lmhead.forward(self.variable_allocator, x)
-        ctx.input_length = [ x + 1 for x in input_length ]
-        calc_stream.synchronize()
-        return x
-    
-    def _text_to_id(self, sentence):
-        return self.tokenizer.encode(sentence)
-
-    def _id_to_text(self, idx : List[int]):
-        return self.tokenizer.decode(idx)
-    
-    def _get_token_id(self, token, use_unk):
-        token = token.translate(self.tokenizer.translator_enc)
-        if use_unk:
-            return self.tokenizer.encoder.get(token, self.tokenizer.unk_id)
+                if self.layers[i].is_fixed:
+                    self.layers[i].locked = False
+                    self.layers[i].on_device = True
+                    with device:
+                        device_ptr = self.allocator.allocate(self.layers[i].nbytes)
+                        self.layers[i]._to_device(device_ptr)
+                    self.layers[i].data = None
+            with device:
+                self.loader_stream = device.create_stream()
+                self.scheduler = LayerScheduler(self.allocator, 2, self.max_block_nbytes, self.loader_stream)
+            
         else:
-            return self.tokenizer.encoder.get(token, None)
+            for layer in fixed_layers:
+                layer.init_data()
+            for i in range(self.num_layers):
+                self.layers[i].init_data()
     
-    def _get_id_token(self, idx):
-        return self.tokenizer.decoder[idx].translate(self.tokenizer.translator_dec)
+    def allocate_decode_buffer(self, ctx : Context, batch : int, length : int) -> List[Tensor]:
+        return [ 
+            ctx.allocate((batch, self.config.NUM_HEADS, length, self.config.DIM_HEAD), dtype=np.float16)
+                for _ in range(self.num_layers)
+        ]
+
+    def embedding(self, 
+            ctx : Context, 
+            ids : np.ndarray,       # (batch, seq_len)  int32
+            position : np.ndarray,  # (batch, seq_len)  int32
+            x_out : Tensor          # (batch, dim_model, seq_len)
+        ):
+        batch, dim_model, seq_len = x_out.shape
+        tensor_ids = Tensor.from_numpy(ctx, ids)
+        position_ids = Tensor.from_numpy(ctx, position)
+        tmp = ctx.allocate(x_out.shape, np.float16)
+        self.token_embedding.embedding_forward(ctx, tensor_ids, x_out)
+        self.position_embedding.embedding_forward(ctx, position_ids, tmp)
+        ck.arith_element_add(
+            batch, seq_len * dim_model,
+            x_out.ptr, tmp.ptr,
+            x_out.ptr,
+            ctx.current_stream
+        )
+        ctx.free(tmp)
+        ctx.free(position_ids)
+        ctx.free(tensor_ids)
     
+    def embedding_step(self,
+            ctx : Context,
+            ids : np.ndarray,       # (batch,)  int32
+            pos : np.ndarray,       # (batch,)  int32
+            x_out : Tensor          # (batch, dim_model)
+        ):
+        batch, dim_model = x_out.shape
+        tensor_ids = Tensor.from_numpy(ctx, ids)
+        pos_ids = Tensor.from_numpy(ctx, pos)
+        tmp = ctx.allocate(x_out.shape, np.float16)
+        self.token_embedding.embedding_step(ctx, tensor_ids, x_out)
+        self.position_embedding.embedding_step(ctx, pos_ids, tmp)
+        ck.arith_element_add(
+            batch, dim_model,
+            x_out.ptr, tmp.ptr,
+            x_out.ptr,
+            ctx.current_stream
+        )
+        ctx.free(tmp)
+        ctx.free(pos_ids)
+        ctx.free(tensor_ids)
+    
+    def encode(self, 
+            ctx : Context, 
+            x : Tensor,                             # (batch. dim_model, seq_len)
+            x_mask : np.ndarray,                    # (batch, seq_len)
+            key_out : Optional[List[Tensor]] = None,      # (batch, num_head, seq_len, dim_head)
+            value_out : Optional[List[Tensor]] = None,    # (batch, num_head, seq_len, dim_head)
+        ):
+        batch, dim_model, seq_len = x.shape
+        assert x_mask.shape == (batch, seq_len)
+        self_attn_mask = x_mask[:, :, np.newaxis] & x_mask[:, np.newaxis, :] & (np.arange(seq_len)[:, np.newaxis] <= np.arange(seq_len)[np.newaxis, :])
+        tensor_mask = Tensor.from_numpy(ctx, self_attn_mask)
+
+        layer_order = list(range(self.num_layers))
+        for i, layer in zip(layer_order, self.scheduler.loop_layers(ctx, self.layers, layer_order)):
+            layer.forward(
+                ctx,
+                x,
+                tensor_mask,
+                None,   # no position bias
+                x,
+                key_out[i] if key_out is not None else None,
+                value_out[i] if key_out is not None else None
+            )
+
+        self.layernorm.forward(ctx, x, x)
+        ctx.free(tensor_mask)
+    
+    def projection(self, ctx : Context, hidden : Tensor, logits_out : Tensor, output_one : Optional[int] = None):
+        batch, dim_model, seq_len = hidden.shape
+        if output_one is not None:
+            x_pos = ctx.allocate((batch, dim_model), np.float16)
+            ck.utils.copy_pos_hidden(
+                batch, dim_model, seq_len, output_one,
+                hidden.ptr, x_pos.ptr,
+                ctx.current_stream
+            )
+            self.token_embedding.projection_step(
+                ctx,
+                x_pos,
+                logits_out
+            )
+            ctx.free(x_pos)
+        else:
+            self.token_embedding.projection_forward(ctx, hidden, logits_out)
+        
+        
+    def step(self,
+            ctx : Context,
+            step_input : Tensor,        # (batch, dim_model)
+            buffer_k : List[Tensor],    # List[(batch, num_heads, buffer_len, dim_head)]
+            buffer_v : List[Tensor],    # List[(batch, num_heads, buffer_len, dim_head)]
+            step_pos : int,             # int
+        ):
+        batch = step_input.shape[0]
+        buffer_len = buffer_k[0].shape[2]
+
+        self_attn_mask = (np.arange(buffer_len) <= step_pos)[np.newaxis].repeat(batch, axis=0)
+        tensor_mask_self = Tensor.from_numpy(ctx, self_attn_mask)
+        layer_order = list(range(self.num_layers))
+        for i, layer in zip(layer_order, self.scheduler.loop_layers(ctx, self.layers, layer_order)):
+            layer.step(
+                ctx,
+                step_input,
+                tensor_mask_self,
+                None,   # no position bias
+                buffer_k[i],
+                buffer_v[i],
+                step_pos,
+                step_input
+            )
+        self.layernorm.step(ctx, step_input, step_input)
+        ctx.free(tensor_mask_self)
+    
+    def projection_step(self, ctx : Context, x : Tensor, logits_out : Tensor):
+        self.token_embedding.projection_step(ctx, x, logits_out)
+    
+    def encode_requires_grad(self,
+            ctx : Context,
+            x : Tensor,                             # (batch. dim_model, seq_len)
+            x_mask : np.ndarray,                    # (batch, seq_len)
+            hidden_list : List[Tensor]              # List[(batch, dim_model, seq_len)]
+        ):
+        batch, dim_model, seq_len = x.shape
+        assert x_mask.shape == (batch, seq_len)
+        self_attn_mask = x_mask[:, :, np.newaxis] & x_mask[:, np.newaxis, :] & (np.arange(seq_len)[:, np.newaxis] <= np.arange(seq_len)[np.newaxis, :])
+        tensor_mask = Tensor.from_numpy(ctx, self_attn_mask)
+
+        for hidden_buffer, layer in zip(hidden_list, self.scheduler.loop_layers(ctx, self.layers, list(range(self.num_layers)))):
+            layer.forward(
+                ctx,
+                x,
+                tensor_mask,
+                None,   # no position bias
+                x,
+            )
+            hidden_buffer.copy_(ctx, x)
+        
+        self.layernorm.forward(ctx, x, x)
+        ctx.free(tensor_mask)
+    
+    def encode_backward(self,
+            ctx : Context,
+            x : Tensor,                 # (batch. dim_model, seq_len)
+            x_mask : np.ndarray,        # (batch, seq_len)
+            hidden_list : List[Tensor], # List[(batch, dim_model, seq_len)]
+            grad : Tensor               # (batch. dim_model, seq_len)
+        ):
+        batch, dim_model, seq_len = grad.shape
+        assert len(hidden_list) == self.num_layers
+        layer_inputs = [x] + hidden_list[:-1]
+        layer_output = hidden_list[-1]
+
+        self_attn_mask = x_mask[:, :, np.newaxis] & x_mask[:, np.newaxis, :] & (np.arange(seq_len)[:, np.newaxis] <= np.arange(seq_len)[np.newaxis, :])
+        tensor_mask = Tensor.from_numpy(ctx, self_attn_mask)
+
+        tmp_grad = ctx.allocate(grad.shape, np.float16)
+        tmp_grad.zero_(ctx)
+        self.layernorm.backward(ctx, layer_output, grad, tmp_grad)
+        grad.copy_(ctx, tmp_grad)
+        ctx.free(tmp_grad)
+
+        for layer, layer_input in zip(self.scheduler.loop_layers(
+            ctx,
+            self.layers,
+            list(reversed(range(self.num_layers)))), layer_inputs[::-1]
+        ):
+            layer.backward(
+                ctx,
+                layer_input,
+                tensor_mask,
+                None,
+                grad
+            )
+        ctx.free(tensor_mask)
+    
+    def projection_backward(self,
+            ctx : Context, 
+            grad_output : Tensor,   # (batch, seq_len, vocab_size)
+            grad : Tensor           # (batch, dim_model, seq_len)
+        ):
+        self.token_embedding.projection_backward(ctx, grad_output, grad)
