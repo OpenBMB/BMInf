@@ -1,8 +1,23 @@
-<h1 align="center">BMInf</h1>
+<div align="center">
+<img src="https://s4.ax1x.com/2021/12/30/TWYYtg.png" alt="BMInf" border="0" width=300px/>
+
+**Low-cost Inference Package for Big Pretrained Language Models**
+
+</div>
+
+-----
+
 <p align="center">
   <a href="https://bminf.readthedocs.io/" target="_blank">Documentation</a> • <a href="https://github.com/OpenBMB/BMInf-demos">Demo</a> •  <a href="#features">Features</a> • <a href="#install">Installation</a> • <a href="#quick-start">Quick Start</a> • <a href="#supported-models">Supported Models</a> • <a href="./README-ZH.md" target="_blank">简体中文</a>
 <br>
 </p>
+
+## What's New
+- 2021/12/21 (**BMInf 1.0.0**) Now the package no more depends on ``cupy`` and supports PyTorch backpropagation.
+- 2021/10/18 We updated the ``generate`` interface and added a new CPM 2.1 demo.
+- 2021/09/24 We publicly released BMInf on the 2021 Zhongguancun Forum (AI and Multidisciplinary Synergy Innovation Forum).
+
+## Overview
 
 BMInf (Big Model Inference) is a low-resource inference package for large-scale pretrained language models (PLMs). It has following features:
 <div id="features"></div>
@@ -40,7 +55,8 @@ Here we list the minimum and recommended configurations for running BMInf.
 | GPU | NVIDIA GeForce GTX 1060 6GB | NVIDIA Tesla V100 16GB
 | PCI-E |  PCI-E 3.0 x16 |  PCI-E 3.0 x16
 
-GPUs with the Pascal micro-architecture or newer architecture are supported by BMInf. Refer to the [table](https://en.wikipedia.org/wiki/CUDA#GPUs_supported) to check whether your GPU is supported. 
+GPUs with compute
+capability 6.1 or higher are supported by BMInf. Refer to the [table](https://en.wikipedia.org/wiki/CUDA#GPUs_supported) to check whether your GPU is supported. 
 
 ### Software Requirement
 
@@ -51,7 +67,9 @@ BMInf requires CUDA version >= 10.1 and all the dependencies can be automaticlly
 - **tqdm** 
 - **jieba**
 - **numpy** 
-- **cupy-cuda<your_cuda_version>** >= 9, <10
+- **cpm_kernels** >= 1.0.9
+
+If you want to use the backpropagation function with PyTorch, make sure `torch` is installed on your device.
 
 <div id="quick-start"></div>
 
@@ -75,8 +93,8 @@ Use the ``fill_blank`` function to obtain the results and replace ``<span>`` tok
 ```python
 for result in cpm2.fill_blank(text, 
     top_p=1.0,
-    top_n=10, 
-    temperature=0.9,
+    top_n=5, 
+    temperature=0.5,
     frequency_penalty=0,
     presence_penalty=0
 ):
@@ -106,7 +124,7 @@ Here we report the speeds of CPM2 encoder and decoder we have tested on differen
 
 Implementation | GPU | Encoder Speed (tokens/s) | Decoder Speed (tokens/s) |
 |-|-|-|-|
-BMInf | NVIDIA GeForce GTX 1060 | 533 | 1.6
+BMInf | NVIDIA GeForce GTX 1060 | 718 | 4.4
 BMInf | NVIDIA GeForce GTX 1080Ti | 1200 | 12
 BMInf | NVIDIA GeForce GTX 2080Ti | 2275 | 19
 BMInf | NVIDIA Tesla V100 | 2966 | 20
