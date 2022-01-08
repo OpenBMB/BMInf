@@ -1,8 +1,23 @@
-<h1 align="center">BMInf</h1>
+<div align="center">
+<img src="https://s4.ax1x.com/2021/12/30/TWYYtg.png" alt="BMInf" border="0" width=300px/>
+
+**大规模预训练语言模型低资源推理工具包**
+
+</div>
+
+-----
+
 <p align="center">
   <a href="https://bminf.readthedocs.io/" target="_blank">文档</a> • <a href="https://github.com/OpenBMB/BMInf-demos">Demo</a> • <a href="#features">特性</a> • <a href="#install">安装</a> • <a href="#quick-start">快速上手</a> • <a href="#supported-models">支持模型</a> • <a href="./README.md" target="_blank">English</a>
 <br>
 </p>
+
+## 最新动态
+- 2021/12/21 (**BMInf 1.0.0**) 现在工具包不再依赖``cupy``，新增了对于PyTorch反向传播的支持。
+- 2021/10/18 更新了``generate``接口并且增加了一个CPM 2.1的新demo。
+- 2021/09/24 BMInf于2021年中关村论坛-人工智能与多学科协同论坛正式发布了！
+
+## 总览
 
 BMInf (Big Model Inference) 是一个用于大规模预训练语言模型（pretrained language models, PLM）推理阶段的低资源工具包。
 <div id="features"></div>
@@ -39,7 +54,7 @@ BMInf (Big Model Inference) 是一个用于大规模预训练语言模型（pret
 | GPU | NVIDIA GeForce GTX 1060 6GB | NVIDIA Tesla V100 16GB
 | PCI-E |  PCI-E 3.0 x16 |  PCI-E 3.0 x16
 
-BMInf支持基于NVIDIA Pascal架构及更新架构的GPU，查看[对照表](https://en.wikipedia.org/wiki/CUDA#GPUs_supported)来明确你的GPU是否被支持。
+BMInf支持计算能力6.1或更高的GPU，查看[对照表](https://en.wikipedia.org/wiki/CUDA#GPUs_supported)来明确你的GPU是否被支持。
 
 ### 软件要求
 
@@ -50,7 +65,9 @@ BMInf需要安装CUDA 10.1及以上版本，所有的依赖包都会在安装过
 - **tqdm** 
 - **jieba**
 - **numpy** 
-- **cupy-cuda<你的cuda版本>** >= 9, <10
+- **cpm_kernels** >= 1.0.9
+
+如果你想使用基于PyTorch的反向传播功能，确保在使用前安装了`torch`。
 
 
 <div id="quick-start"></div>
@@ -75,8 +92,8 @@ text = "北京环球度假区相关负责人介绍，北京环球影城指定单
 ```python
 for result in cpm2.fill_blank(text, 
     top_p=1.0,
-    top_n=10, 
-    temperature=0.9,
+    top_n=5, 
+    temperature=0.5,
     frequency_penalty=0,
     presence_penalty=0
 ):
@@ -104,7 +121,7 @@ BMInf目前支持下列模型：
 
 实现 | GPU | 编码速度 (tokens/s) | 解码速度 (tokens/s) |
 |-|-|-|-|
-BMInf | NVIDIA GeForce GTX 1060 | 533 | 1.6
+BMInf | NVIDIA GeForce GTX 1060 | 718 | 4.4
 BMInf | NVIDIA GeForce GTX 1080Ti | 1200 | 12
 BMInf | NVIDIA GeForce GTX 2080Ti | 2275 | 19
 BMInf | NVIDIA Tesla V100 | 2966 | 20
