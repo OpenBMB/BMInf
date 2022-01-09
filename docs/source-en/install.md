@@ -23,7 +23,7 @@ After installation, you can run an example in the ``examples`` folder to find if
 python examples/fill_blank.py
 ```
 
-![demo](./images/demo.gif)
+![](./images/demo.gif)
 
 ## Hardware Requirement
 

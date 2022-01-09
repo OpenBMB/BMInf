@@ -23,7 +23,7 @@ docker run -it --gpus 1 -v $HOME/.cache/bigmodels:/root/.cache/bigmodels --rm op
 python examples/fill_blank.py
 ```
 
-![demo](./images/demo.gif)
+![](./images/demo.gif)
 
 ## 硬件要求
 

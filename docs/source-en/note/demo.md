@@ -30,10 +30,10 @@ BMInf-Demos includes application examples designed according to models in BMInf.
 
 ## Install
 
-1. Run the follow command after installing `nvidia-docker2`:
+- Run the follow command after installing `nvidia-docker2`:
 
 ```console
 $ docker run -it --gpus 1 -v $HOME/.cache/bigmodels:/root/.cache/bigmodels -p 0.0.0.0:8000:8000 --rm openbmb/bminf-demos
 ```
 
-2. Open your browser and visit http://localhost:8000/ to access the demo.
+- Open your browser and visit http://localhost:8000/ to access the demo.

@@ -17,7 +17,7 @@
 
 # -- Project information -----------------------------------------------------
 import os, sys; sys.path.insert(0, os.path.abspath('../../'))
-autodoc_mock_imports = ["cupy", "numpy", "jieba", "tqdm"]
+autodoc_mock_imports = ["cpm_kernels", "numpy", "jieba", "tqdm"]
 project = 'BMInf'
 copyright = '2021, OpenBMB'
 author = 'OpenBMB'

@@ -31,11 +31,11 @@ BMInf-Demos是根据BMInf中的模型设计的应用示例。它们分别是：
 
 ## 安装
 
-1. 安装`nvidia-docker2`后运行下面的命令：
+- 安装`nvidia-docker2`后运行下面的命令：
 
 ```console
 $ docker run -it --gpus 1 -v $HOME/.cache/bigmodels:/root/.cache/bigmodels -p 0.0.0.0:8000:8000 --rm openbmb/bminf-demos
 ```
 
-2. 打开浏览器访问 http://localhost:8000/ 即可使用。
+- 打开浏览器访问 http://localhost:8000/ 即可使用。
 
