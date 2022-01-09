@@ -8,7 +8,7 @@
 -----
 
 <p align="center">
-  <a href="https://bminf.readthedocs.io/" target="_blank">Documentation</a> • <a href="https://github.com/OpenBMB/BMInf-demos">Demo</a> •  <a href="#features">Features</a> • <a href="#install">Installation</a> • <a href="#quick-start">Quick Start</a> • <a href="#supported-models">Supported Models</a> • <a href="./README-ZH.md" target="_blank">简体中文</a>
+  <a href="https://bminf.readthedocs.io/en/latest/" target="_blank">Documentation</a> • <a href="https://github.com/OpenBMB/BMInf-demos">Demo</a> •  <a href="#features">Features</a> • <a href="#install">Installation</a> • <a href="#quick-start">Quick Start</a> • <a href="#supported-models">Supported Models</a> • <a href="./README-ZH.md" target="_blank">简体中文</a>
 <br>
 </p>
 
@@ -33,7 +33,7 @@ BMInf (Big Model Inference) is a low-resource inference package for large-scale 
 ![demo](./docs/source/images/demo.gif)
 
 ## Documentation
-Our [documentation](https://bminf.readthedocs.io/) provides more information about the package.
+Our [documentation](https://bminf.readthedocs.io/en/latest/) provides more information about the package.
 
 <div id="install"></div>
 
