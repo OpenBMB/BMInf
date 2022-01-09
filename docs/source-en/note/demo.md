@@ -28,7 +28,7 @@ BMInf-Demos includes application examples designed according to models in BMInf.
 </div>
 <br/>
 
-# **Install**
+## Install
 
 1. Run the follow command after installing `nvidia-docker2`:
 
