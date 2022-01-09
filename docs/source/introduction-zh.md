@@ -36,7 +36,7 @@ PyTorch | NVIDIA Tesla A100 | - | 7
 ## 参与贡献
 我们提供了微信的开源社区二维码并且欢迎贡献者参照我们的[贡献指南](https://github.com/OpenBMB/BMInf/blob/master/CONTRIBUTING.md)贡献相关代码。
 
-![Our community](./images/community.jpeg)
+![](./images/community.jpeg)
 
 ## 开源许可
 

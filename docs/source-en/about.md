@@ -36,4 +36,4 @@ The goal of OpenBMB is to build the model base and toolkits for large-scale pre-
 ## Contact Us
 Join our WeChat community to contact us:
 
-![Our community](./images/community.jpeg)
+![](./images/community.jpeg)

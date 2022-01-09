@@ -3,26 +3,26 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Welcome to use BMInf！
+欢迎使用BMInf！
 =================================
-BMInf (Big Model Inference) is a low-resource inference package for large-scale pretrained language models (PLMs). 
+BMInf (Big Model Inference) 是一个用于大规模预训练语言模型（pretrained language models, PLM）推理阶段的低资源工具包。
 
 .. toctree::
    :maxdepth: 2
    
-   introduction
-   install
-   about
+   introduction-zh
+   install-zh
+   about-zh
 
 .. toctree::
    :maxdepth: 2
-   :caption: Notes
+   :caption: 说明
 
-   note/demo
-   note/tech
+   note/demo-zh
+   note/tech-zh
 
 .. toctree::
    :maxdepth: 2
-   :caption: API References
+   :caption: API参考
 
-   Models <api/models>
+   模型 <api/models>

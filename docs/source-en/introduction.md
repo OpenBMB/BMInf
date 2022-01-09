@@ -38,7 +38,7 @@ PyTorch | NVIDIA Tesla A100 | - | 7
 ## Contributing
 Here is the QRCode to our WeChat user community and we welcome others to contribute codes following our [contributing guidelines](https://github.com/OpenBMB/BMInf/blob/master/CONTRIBUTING.md).
 
-![Our community](./docs/source/images/community.jpeg)
+![](./images/community.jpeg)
 
 ## License
 
