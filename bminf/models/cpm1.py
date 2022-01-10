@@ -204,6 +204,7 @@ class CPM1:
             stop_tokens : Optional[List[str]] = None,
         ):
         """Generate some words from the model.
+        
         Args:
             input_sentence: Your input.
             max_tokens: Maximum number of tokens to generate.

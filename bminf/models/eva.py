@@ -197,6 +197,7 @@ class EVA:
             truncation_length : Optional[int] = 256
         ) -> Tuple[str, bool]:
         """Generate dialogue based on context.
+        
         Args:
             context: Context of the dialogue.
             max_tokens: Maximum tokens to generate.

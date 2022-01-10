@@ -213,6 +213,7 @@ class CPM2:
             presence_penalty : float = 0,
         ):
         """Generate spans from input sentence.
+
         Args:
             input_sentence: Input sentence with "<span>" tokens.
             spans_position: List of span positions. If ``None``, the positions of span are automatically detected.
@@ -271,6 +272,7 @@ class CPM2:
             stop_tokens : Optional[List[str]] = None,
         ) -> Tuple[str, bool]:
         """Generate some words from the model.
+        
         Args:
             input_sentence: Your input.
             max_tokens: Maximum number of tokens to generate.
