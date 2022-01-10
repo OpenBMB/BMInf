@@ -20,7 +20,7 @@ def fill_blank(cpm2 : bminf.models.CPM2, text : str):
 
 def main():
     print("Loading model")
-    cpm2 = bminf.models.CPM2(1)
+    cpm2 = bminf.models.CPM2()
     print("Start")
     fill_blank(cpm2, input_text)
 
