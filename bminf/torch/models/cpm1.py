@@ -12,7 +12,7 @@ class CPM1(TorchGPT2):
         ) -> None:
         if version is None:
             version = LATEST_VERSION
-        if version not in SUPPORTED_VERSION:
+        if version not in SUPPORTED_VERSION and not version.startswith("file://"):
             raise RuntimeError("CPM1 version %s is not supported (requires %s)" % (version, SUPPORTED_VERSION))
         
         config = CPM1Configuration()
