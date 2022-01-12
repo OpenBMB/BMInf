@@ -3,8 +3,3 @@ sphinx-autobuild
 sphinx_rtd_theme
 recommonmark
 sphinx_markdown_tables
-requests
-tqdm
-jieba
-numpy
-cpm_kernels>=1.0.9
