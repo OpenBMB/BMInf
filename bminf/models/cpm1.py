@@ -32,7 +32,7 @@ class CPM1:
         ) -> None:
         if version is None:
             version = LATEST_VERSION
-        if version not in SUPPORTED_VERSION:
+        if version not in SUPPORTED_VERSION and not version.startswith("file://"):
             raise RuntimeError("CPM1 version %s is not supported (requires %s)" % (version, SUPPORTED_VERSION))
         config = CPM1Configuration()
         config.MODEL_NAME = version
@@ -204,6 +204,7 @@ class CPM1:
             stop_tokens : Optional[List[str]] = None,
         ):
         """Generate some words from the model.
+        
         Args:
             input_sentence: Your input.
             max_tokens: Maximum number of tokens to generate.

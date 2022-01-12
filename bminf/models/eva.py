@@ -41,7 +41,7 @@ class EVA:
         ) -> None:
         if version is None:
             version = LATEST_VERSION
-        if version not in SUPPORTED_VERSION:
+        if version not in SUPPORTED_VERSION and not version.startswith("file://"):
             raise RuntimeError("EVA version %s is not supported (requires %s)" % (version, SUPPORTED_VERSION))
         config = EVAConfiguration()
         config.MODEL_NAME = version
@@ -197,6 +197,7 @@ class EVA:
             truncation_length : Optional[int] = 256
         ) -> Tuple[str, bool]:
         """Generate dialogue based on context.
+        
         Args:
             context: Context of the dialogue.
             max_tokens: Maximum tokens to generate.
