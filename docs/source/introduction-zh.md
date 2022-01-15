@@ -25,7 +25,7 @@ BMInf目前支持下列模型：
 
 实现 | GPU | 编码速度 (tokens/s) | 解码速度 (tokens/s) |
 |-|-|-|-|
-BMInf | NVIDIA GeForce GTX 1060 | 533 | 1.6
+BMInf | NVIDIA GeForce GTX 1060 | 718 | 4.4
 BMInf | NVIDIA GeForce GTX 1080Ti | 1200 | 12
 BMInf | NVIDIA GeForce GTX 2080Ti | 2275 | 19
 BMInf | NVIDIA Tesla V100 | 2966 | 20
@@ -36,7 +36,7 @@ PyTorch | NVIDIA Tesla A100 | - | 7
 ## 参与贡献
 我们提供了微信的开源社区二维码并且欢迎贡献者参照我们的[贡献指南](https://github.com/OpenBMB/BMInf/blob/master/CONTRIBUTING.md)贡献相关代码。
 
-![Our community](./images/community.jpeg)
+![](./images/community.jpeg)
 
 ## 开源许可
 
