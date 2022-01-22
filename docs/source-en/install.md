@@ -23,7 +23,7 @@ After installation, you can run an example in the ``examples`` folder to find if
 python examples/fill_blank.py
 ```
 
-![demo](./images/demo.gif)
+![](./images/demo.gif)
 
 ## Hardware Requirement
 
@@ -35,7 +35,7 @@ Here we list the minimum and recommended configurations for running BMInf.
 | GPU | NVIDIA GeForce GTX 1060 6GB | NVIDIA Tesla V100 16GB
 | PCI-E |  PCI-E 3.0 x16 |  PCI-E 3.0 x16
 
-GPUs with the Pascal micro-architecture or newer architecture are supported by BMInf. Refer to the [table](https://en.wikipedia.org/wiki/CUDA#GPUs_supported) to check whether your GPU is supported. 
+GPUs with compute capability 6.1 or higher are supported by BMInf. Refer to the [table](https://en.wikipedia.org/wiki/CUDA#GPUs_supported) to check whether your GPU is supported. 
 
 ## Software Requirement
 
@@ -46,17 +46,7 @@ BMInf requires CUDA version >= 10.1 and all the dependencies can be automaticlly
 - **tqdm** 
 - **jieba**
 - **numpy** 
-- **cupy-cuda<your_cuda_version>** >= 9, <10
+- **cpm_kernels** >= 1.0.9
 
-Here is the table to find the corresponding cupy package for your CUDA version. Don't worry, this process will also be automatically done.
-
-| CUDA Version | Package Name |
-|-|-|
-v10.1 | cupy-cuda101
-v10.2 | cupy-cuda102
-v11.0 | cupy-cuda110
-v11.1 | cupy-cuda111
-v11.2 | cupy-cuda112
-v11.3 | cupy-cuda113
-v11.4 | cupy-cuda114
+If you want to use the backpropagation function with PyTorch, make sure `torch` is installed on your device.
 

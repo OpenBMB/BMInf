@@ -1,7 +1,7 @@
 # About Us
 BMInf is developed and maintained by OpenBMB (Open Lab for Big Model Base). OpenBMB is founded and supported by Beijing Academy of Artificial Intelligence (BAAI) and Tsinghua University. 
 
-The goal of OpenBMB is to build the model base and toolkits for large-scale pre-trained language models. We aim to accelerate the process of training, tuning, and inference for big models and lower the barriers to use them. Based on this, we further aim to build the open-source community to promote the open-source ecosystems of pre-trained language models, build the AI infrastructure, and define the application paradigm in the intelligent era.
+The goal of OpenBMB is to build the model base and toolkits for large-scale pre-trained language models. We aim to accelerate the process of training, tuning, and inference for big models (with more than 10 billion parameters) and lower the barriers to use them. Based on this, we further aim to build the open-source community to promote the open-source ecosystems of pre-trained language models, build the AI infrastructure, and define the application paradigm in the intelligent era.
 
 ## Our Team
 
@@ -36,4 +36,4 @@ The goal of OpenBMB is to build the model base and toolkits for large-scale pre-
 ## Contact Us
 Join our WeChat community to contact us:
 
-![Our community](./images/community.jpeg)
+![](./images/community.jpeg)
