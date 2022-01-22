@@ -155,8 +155,13 @@ class Layer:
     def init_data(self, pinned : bool = False):
         if self.data is None:
             if pinned:
-                ptr = cudart.cudaMallocHost(self.nbytes)
-                self.data = np.ctypeslib.as_array(ctypes.cast(ptr, ctypes.POINTER(ctypes.c_byte)), shape=(self.nbytes,))
+                try:
+                    ptr = cudart.cudaMallocHost(self.nbytes)
+                    self.data = np.ctypeslib.as_array(ctypes.cast(ptr, ctypes.POINTER(ctypes.c_byte)), shape=(self.nbytes,))
+                except RuntimeError: # out of memory
+                    
+                    # fallback to non-pinned memory
+                    self.data = np.empty(self.nbytes, dtype=np.uint8)
             else:
                 self.data = np.empty(self.nbytes, dtype=np.uint8)
         
