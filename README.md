@@ -29,8 +29,9 @@
 - 2021/10/18 We updated the ``generate`` interface and added a new CPM 2.1 demo.
 - 2021/09/24 We publicly released BMInf on the 2021 Zhongguancun Forum (AI and Multidisciplinary Synergy Innovation Forum).
 
-## Overview
 <div id="overview"></div>
+
+## Overview
 
 BMInf (Big Model Inference) is a low-resource inference package for large-scale pretrained language models (PLMs). It has following features:
 <div id="features"></div>
@@ -46,6 +47,8 @@ BMInf (Big Model Inference) is a low-resource inference package for large-scale 
 ![demo](./docs/source/images/demo.gif)
 
 For more demos, please refer to [BMInf-demos](https://github.com/OpenBMB/BMInf-demos).
+
+<div id="documentation"></div>
 
 ## Documentation
 Our [documentation](https://bminf.readthedocs.io/en/latest/) provides more information about the package.

@@ -29,9 +29,9 @@
 - 2021/10/18 更新了``generate``接口并且增加了一个CPM 2.1的新demo。
 - 2021/09/24 BMInf于2021年中关村论坛-人工智能与多学科协同论坛正式发布了！
 
+<div id="overview"></div>
 
 ## 总览
-<div id="overview"></div>
 
 BMInf (Big Model Inference) 是一个用于大规模预训练语言模型（pretrained language models, PLM）推理阶段的低资源工具包。
 <div id="features"></div>
@@ -47,6 +47,8 @@ BMInf (Big Model Inference) 是一个用于大规模预训练语言模型（pret
 ![demo](./docs/source/images/demo.gif)
 
 访问[BMInf-demos](https://github.com/OpenBMB/BMInf-demos)查看更多Demo。
+
+<div id="documentation"></div>
 
 ## 文档
 我们的[文档](https://bminf.readthedocs.io/zh_CN/latest/)提供了关于该工具包的更多信息。
