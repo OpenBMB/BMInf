@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-	<a href='https://bminf.readthedocs.io/en/main/'>
+	<a href='https://bminf.readthedocs.io/en/latest/'>
 	    <img src='https://readthedocs.org/projects/bminf/badge/?version=main' alt='doc' />
 	</a>
 	<a href="https://github.com/OpenBMB/BMInf/blob/main/LICENSE">

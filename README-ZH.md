@@ -1,23 +1,37 @@
 <div align="center">
-<img src="https://s4.ax1x.com/2021/12/30/TWYYtg.png" alt="BMInf" border="0" width=300px/>
 
-**大规模预训练语言模型低资源推理工具包**
+<h1>♾ BMInf</h1>
+
+**大模型高效推理工具包**
 
 </div>
 
------
-
 <p align="center">
-  <a href="https://bminf.readthedocs.io/" target="_blank">文档</a> • <a href="https://github.com/OpenBMB/BMInf-demos">Demo</a> • <a href="#features">特性</a> • <a href="#install">安装</a> • <a href="#quick-start">快速上手</a> • <a href="#supported-models">支持模型</a> • <a href="./README.md" target="_blank">English</a>
+  <a href="#overview">总览</a> • <a href="#demo">Demo</a> • <a href="#documentation">文档</a> • <a href="#install">安装</a> • <a href="#quick-start">快速上手</a> • <a href="#supported-models">支持模型</a> • <a href="./README.md" target="_blank">English</a>
 <br>
 </p>
+
+<p align="center">
+	<a href='https://bminf.readthedocs.io/zh_CN/latest/'>
+	    <img src='https://readthedocs.org/projects/bminf/badge/?version=main' alt='doc' />
+	</a>
+	<a href="https://github.com/OpenBMB/BMInf/blob/main/LICENSE">
+	    <img alt="github" src="https://img.shields.io/github/license/OpenBMB/BMInf">
+	</a>
+	<a>
+		 <img alt="version" src="https://img.shields.io/badge/version-1.0.0-blue">
+	</a>
+</p>    
+
 
 ## 最新动态
 - 2021/12/21 (**BMInf 1.0.0**) 现在工具包不再依赖``cupy``，新增了对于PyTorch反向传播的支持。
 - 2021/10/18 更新了``generate``接口并且增加了一个CPM 2.1的新demo。
 - 2021/09/24 BMInf于2021年中关村论坛-人工智能与多学科协同论坛正式发布了！
 
+
 ## 总览
+<div id="overview"></div>
 
 BMInf (Big Model Inference) 是一个用于大规模预训练语言模型（pretrained language models, PLM）推理阶段的低资源工具包。
 <div id="features"></div>
@@ -28,11 +42,14 @@ BMInf (Big Model Inference) 是一个用于大规模预训练语言模型（pret
 - **模型升级** 基于持续学习推出百亿模型新升级CPM2.1 [[2](#ref)]，文本生成能力大幅提高。
 - **应用便捷** 基于工具包可以快速开发大模型相关下游应用。
 
+
 ## Demo
 ![demo](./docs/source/images/demo.gif)
 
+访问[BMInf-demos](https://github.com/OpenBMB/BMInf-demos)查看更多Demo。
+
 ## 文档
-我们的[文档](https://bminf.readthedocs.io/)提供了关于该工具包的更多信息。
+我们的[文档](https://bminf.readthedocs.io/zh_CN/latest/)提供了关于该工具包的更多信息。
 
 <div id="install"></div>
 
@@ -68,7 +85,6 @@ BMInf需要安装CUDA 10.1及以上版本，所有的依赖包都会在安装过
 - **cpm_kernels** >= 1.0.9
 
 如果你想使用基于PyTorch的反向传播功能，确保在使用前安装了`torch`。
-
 
 <div id="quick-start"></div>
 
@@ -129,10 +145,14 @@ BMInf | NVIDIA Tesla A100 | 4365 | 26
 PyTorch | NVIDIA Tesla V100 | - | 3
 PyTorch | NVIDIA Tesla A100 | - | 7
 
-## 参与贡献
-我们提供了微信的开源社区二维码并且欢迎贡献者参照我们的[贡献指南](https://github.com/OpenBMB/BMInf/blob/master/CONTRIBUTING.md)贡献相关代码。
+## 开源社区
+欢迎贡献者参照我们的[贡献指南](https://github.com/OpenBMB/BMInf/blob/master/CONTRIBUTING.md)贡献相关代码。
 
-![Our community](./docs/source/images/community.jpeg)
+您也可以在其他平台与我们沟通交流:
+- QQ群: 735930538
+- 官方网站: http://www.openbmb.org
+- 微博: http://weibo.cn/OpenBMB
+- Twitter: https://twitter.com/OpenBMB
 
 ## 开源许可
 
