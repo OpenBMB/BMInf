@@ -1,6 +1,6 @@
 <div align="center">
 
-<div><font size="30">BMInf</font></div>
+<h1>♾ BMInf</h1>
 
 **Efficient Inference for Big Models**
 
