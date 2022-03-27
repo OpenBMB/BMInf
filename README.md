@@ -1,7 +1,15 @@
 <div align="center">
-<h1>♾ BMInf</h1>
+
+<div><font size="30">BMInf</font></div>
 
 **Efficient Inference for Big Models**
+
+</div>
+
+<p align="center">
+  <a href="#overview">Overview</a> • <a href="#demo">Demo</a> • <a href="#documentation">Documentation</a> • <a href="#install">Installation</a> • <a href="#quick-start">Quick Start</a> • <a href="#supported-models">Supported Models</a> • <a href="./README-ZH.md" target="_blank">简体中文</a>
+<br>
+</p>
 
 <p align="center">
 	<a href='https://bminf.readthedocs.io/en/main/'>
@@ -10,17 +18,11 @@
 	<a href="https://github.com/OpenBMB/BMInf/blob/main/LICENSE">
 	    <img alt="github" src="https://img.shields.io/github/license/OpenBMB/BMInf">
 	</a>
-	<span>
+	<a>
 		 <img alt="version" src="https://img.shields.io/badge/version-1.0.0-blue">
-	</span>
+	</a>
 </p>    
 
-</div>
-
-<p align="center">
-  <a href="#overview">Overview</a> • <a href="#demo">Demo</a> • <a href="#documentation">Documentation</a> • <a href="#install">Installation</a> • <a href="#quick-start">Quick Start</a> • <a href="#supported-models">Supported Models</a> • <a href="./README-ZH.md" target="_blank">简体中文</a>
-<br>
-</p>
 
 ## What's New
 - 2021/12/21 (**BMInf 1.0.0**) Now the package no more depends on ``cupy`` and supports PyTorch backpropagation.
