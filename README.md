@@ -1,14 +1,24 @@
 <div align="center">
-<img src="https://s4.ax1x.com/2021/12/30/TWYYtg.png" alt="BMInf" border="0" width=300px/>
+<h1>♾ BMInf</h1>
 
-**Low-cost Inference Package for Big Pretrained Language Models**
+**Efficient Inference for Big Models**
+
+<p align="center">
+	<a href='https://bminf.readthedocs.io/en/main/'>
+	    <img src='https://readthedocs.org/projects/bminf/badge/?version=main' alt='doc' />
+	</a>
+	<a href="https://github.com/OpenBMB/BMInf/blob/main/LICENSE">
+	    <img alt="github" src="https://img.shields.io/github/license/OpenBMB/BMInf">
+	</a>
+	<span>
+		 <img alt="version" src="https://img.shields.io/badge/version-1.0.0-blue">
+	</span>
+</p>    
 
 </div>
 
------
-
 <p align="center">
-  <a href="https://bminf.readthedocs.io/en/latest/" target="_blank">Documentation</a> • <a href="https://github.com/OpenBMB/BMInf-demos">Demo</a> •  <a href="#features">Features</a> • <a href="#install">Installation</a> • <a href="#quick-start">Quick Start</a> • <a href="#supported-models">Supported Models</a> • <a href="./README-ZH.md" target="_blank">简体中文</a>
+  <a href="#overview">Overview</a> • <a href="#demo">Demo</a> • <a href="#documentation">Documentation</a> • <a href="#install">Installation</a> • <a href="#quick-start">Quick Start</a> • <a href="#supported-models">Supported Models</a> • <a href="./README-ZH.md" target="_blank">简体中文</a>
 <br>
 </p>
 
@@ -18,6 +28,7 @@
 - 2021/09/24 We publicly released BMInf on the 2021 Zhongguancun Forum (AI and Multidisciplinary Synergy Innovation Forum).
 
 ## Overview
+<div id="overview"></div>
 
 BMInf (Big Model Inference) is a low-resource inference package for large-scale pretrained language models (PLMs). It has following features:
 <div id="features"></div>
@@ -32,12 +43,14 @@ BMInf (Big Model Inference) is a low-resource inference package for large-scale 
 ## Demo
 ![demo](./docs/source/images/demo.gif)
 
+For more demos, please refer to [BMInf-demos](https://github.com/OpenBMB/BMInf-demos).
+
 ## Documentation
 Our [documentation](https://bminf.readthedocs.io/en/latest/) provides more information about the package.
 
 <div id="install"></div>
 
-## Install
+## Installation
 
 - From pip: ``pip install bminf``
 
@@ -132,10 +145,14 @@ BMInf | NVIDIA Tesla A100 | 4365 | 26
 PyTorch | NVIDIA Tesla V100 | - | 3
 PyTorch | NVIDIA Tesla A100 | - | 7
 
-## Contributing
-Here is the QRCode to our WeChat user community and we welcome others to contribute codes following our [contributing guidelines](https://github.com/OpenBMB/BMInf/blob/master/CONTRIBUTING.md).
+## Community
+We welcome everyone to contribute codes following our [contributing guidelines](https://github.com/OpenBMB/BMInf/blob/master/CONTRIBUTING.md).
 
-![Our community](./docs/source/images/community.jpeg)
+You can also find us on other platforms:
+- QQ Group: 735930538
+- Website: http://www.openbmb.org
+- Weibo: http://weibo.cn/OpenBMB
+- Twitter: https://twitter.com/OpenBMB
 
 ## License
 
