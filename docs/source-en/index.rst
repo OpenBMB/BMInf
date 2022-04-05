@@ -3,12 +3,13 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Welcome to use BMInf！
+BMInf's documentation!
 =================================
 BMInf (Big Model Inference) is a low-resource inference package for large-scale pretrained language models (PLMs). 
 
 .. toctree::
    :maxdepth: 2
+   :caption: Getting Started
    
    introduction
    install
@@ -23,6 +24,6 @@ BMInf (Big Model Inference) is a low-resource inference package for large-scale 
 
 .. toctree::
    :maxdepth: 2
-   :caption: API References
+   :caption: Package Reference
 
    Models <api/models>

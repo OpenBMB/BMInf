@@ -9,6 +9,7 @@ BMInf (Big Model Inference) 是一个用于大规模预训练语言模型（pret
 
 .. toctree::
    :maxdepth: 2
+   :caption: 快速入门
    
    introduction-zh
    install-zh
