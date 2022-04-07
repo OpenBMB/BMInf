@@ -1,6 +1,6 @@
 <div align="center">
 
-<h1>♾ BMInf</h1>
+<h1><img src="docs/_static/logo.png" height="28px" /> BMInf</h1>
 
 **Efficient Inference for Big Models**
 
@@ -155,7 +155,8 @@ We welcome everyone to contribute codes following our [contributing guidelines](
 
 You can also find us on other platforms:
 - QQ Group: 735930538
-- Website: http://www.openbmb.org
+- WeChat Official Account: OpenBMB
+- Website: https://www.openbmb.org
 - Weibo: http://weibo.cn/OpenBMB
 - Twitter: https://twitter.com/OpenBMB
 
