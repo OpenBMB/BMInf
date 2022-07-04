@@ -40,7 +40,8 @@ class CUDAAllocator(Allocator):
     def free_all(self):
         with self.device:
             for mem in self.__allocated:
-                cudart.cudaFree(mem.ptr)
+                cudart.cudaFreeAsync(mem.ptr, cudart.cudaStreamNonBlocking)
+            cudart.cudaStreamSynchronize(cudart.cudaStreamNonBlocking)
 
     def __del__(self):
         try:
