@@ -23,7 +23,6 @@
 	</a>
 </p>    
 
-
 ## What's New
 - 2021/12/21 (**BMInf 1.0.0**) Now the package no more depends on ``cupy`` and supports PyTorch backpropagation.
 - 2021/10/18 We updated the ``generate`` interface and added a new CPM 2.1 demo.
@@ -42,6 +41,17 @@ BMInf (Big Model Inference) is a low-resource inference package for large-scale 
 - **Upgraded Model.** Based on CPM2 [[2](#ref)], the newly upgraded model CPM2.1 is currently supported. Based on continual learning, the text generation ability of CPM2.1 is greatly improved compared to CPM2.
 - **Convenient Deployment.** Using BMInf, it will be fast and convenient to develop interesting downstream applications.
 
+If you use the code, please cite the following [paper](https://aclanthology.org/2022.acl-demo.22.pdf):
+
+```
+@inproceedings{han2022bminf,
+	title={BMInf: An Efficient Toolkit for Big Model Inference and Tuning},
+	author={Han, Xu and Zeng, Guoyang and Zhao, Weilin and Liu, Zhiyuan and Zhang, Zhengyan and Zhou, Jie and Zhang, Jun and Chao, Jia and Sun, Maosong},
+	booktitle={Proceedings of the 60th Annual Meeting of the Association for Computational Linguistics: System Demonstrations},
+	pages={224--230},
+	year={2022}
+}
+```
 
 ## Demo
 ![demo](./docs/source/images/demo.gif)
