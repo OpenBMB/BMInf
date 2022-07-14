@@ -21,10 +21,11 @@ def pin_layer(m : torch.nn.Module):
     return m
 
 def copy_layer(m_src : torch.nn.Module, m_dst : torch.nn.Module):
-    for (n1, p1), (n2, p2) in zip(m_src.named_parameters(), m_dst.named_parameters()):
-        if n1 != n2:
-            raise RuntimeError("Parameter `%s` != `%s`" % (n1, n2))
-        p2.copy_(p1, non_blocking=True)
+    with torch.no_grad():
+        for (n1, p1), (n2, p2) in zip(m_src.named_parameters(), m_dst.named_parameters()):
+            if n1 != n2:
+                raise RuntimeError("Parameter `%s` != `%s`" % (n1, n2))
+            p2.copy_(p1, non_blocking=True)
 
 class DeviceLayerScheduler:
     def __init__(self, layers : List[torch.nn.Module], device_id):
