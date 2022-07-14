@@ -18,6 +18,7 @@ def pin_layer(m : torch.nn.Module):
     for param in m.parameters():
         with torch.no_grad():
             param.data = param.data.pin_memory()
+    return m
 
 def copy_layer(m_src : torch.nn.Module, m_dst : torch.nn.Module):
     for (n1, p1), (n2, p2) in zip(m_src.named_parameters(), m_dst.named_parameters()):
