@@ -1,5 +1,7 @@
+from re import L
 import torch
 from typing import List
+from cpm_kernels.library import cudart
 
 def calc_fixed_layers(total_layers : int, max_fixed : int):
     max_fixed = min(max_fixed, total_layers)
@@ -20,12 +22,22 @@ def pin_layer(m : torch.nn.Module):
             param.data = param.data.pin_memory()
     return m
 
-def copy_layer(m_src : torch.nn.Module, m_dst : torch.nn.Module):
+def transfer_layers(m_src : torch.nn.Module, m_dst : dict):
     with torch.no_grad():
-        for (n1, p1), (n2, p2) in zip(m_src.named_parameters(), m_dst.named_parameters()):
-            if n1 != n2:
-                raise RuntimeError("Parameter `%s` != `%s`" % (n1, n2))
-            p2.copy_(p1, non_blocking=True)
+        for name, param in m_src.named_parameters():
+            assert name in m_dst
+            # copy to device buffer
+            m_dst[name].copy_(param, non_blocking=True)
+
+def swap_params(m_src : torch.nn.Module, m_dst : dict):
+    with torch.no_grad():
+        for name, param in m_src.named_parameters():
+            assert name in m_dst
+
+            # swap memory info
+            tmp = m_dst[name].data
+            m_dst[name].data = param.data
+            param.data = tmp
 
 class DeviceLayerScheduler:
     def __init__(self, layers : List[torch.nn.Module], device_id):
@@ -33,43 +45,48 @@ class DeviceLayerScheduler:
         self._num_layers = len(layers)
         
         self._fixed_layers = set()
-        self._active_layers = {}
         self._sched_layers = []
         self._layers = []
+        self._active_layers = {}
 
         with self._device:
-            self._load_stream = torch.cuda.stream(torch.cuda.Stream())
-            if self._num_layers > 0:
-                free_mem = torch.cuda.mem_get_info()[0]
+            with torch.no_grad():
+                self._load_stream = torch.cuda.stream(torch.cuda.Stream())
+                if self._num_layers > 0:
+                    free_mem = cudart.cudaMemGetInfo()[0]
 
-                total_size = 0
-                for param in layers[0].parameters():
-                    total_size += param.numel() * param.storage().element_size()
-                
-                total_layers = free_mem // total_size
-                if total_layers < 2:
-                    raise OSError("CUDA out of memory on device %d" % device_id)
-                
-                sched_layers = 2
-                if total_layers >= self._num_layers:
-                    sched_layers = 0
-                fixed_layers = total_layers - sched_layers
+                    total_size = 0
+                    for param in layers[0].parameters():
+                        total_size += param.numel() * param.storage().element_size()
+                    
+                    total_layers = free_mem // total_size
+                    if total_layers < 2:
+                        raise OSError("CUDA out of memory on device %d" % device_id)
+                    
+                    sched_layers = 2
+                    if total_layers >= self._num_layers:
+                        sched_layers = 0
+                    fixed_layers = total_layers - sched_layers
 
-                layer_id_to_fix = calc_fixed_layers(self._num_layers, fixed_layers)
-                self._fixed_layers = set(layer_id_to_fix)
-                for i in range(self._num_layers):
-                    if i in self._fixed_layers:
-                        self._layers.append( layers[i].cuda() )
-                    elif len(self._sched_layers) < sched_layers:
-                        self._layers.append( pin_layer(layers[i]) )
-                        self._active_layers[i] = len(self._sched_layers)
-                        self._sched_layers.append({
-                            "layer": layers[i].cuda(),
-                            "evt": torch.cuda.Event(),
-                            "unused": True
-                        })
-                    else:
-                        self._layers.append( pin_layer(layers[i]) )
+                    layer_id_to_fix = calc_fixed_layers(self._num_layers, fixed_layers)
+                    self._fixed_layers = set(layer_id_to_fix)
+                    for i in range(self._num_layers):
+                        if i in self._fixed_layers:
+                            self._layers.append( layers[i].cuda() )
+                        else:
+                            self._layers.append( pin_layer(layers[i]) )
+                    
+                    for i in range(self._num_layers):
+                        if len(self._sched_layers) >= sched_layers:
+                            break
+                        if i not in self._fixed_layers:
+                            self._active_layers[i] = len(self._sched_layers)
+                            self._sched_layers.append({
+                                "parameters": { name: param.cuda() for name, param in layers[i].named_parameters()},
+                                "evt": torch.cuda.Event(),
+                                "id": i,
+                                "unused": True
+                            })
 
     def _get_unused_buffer_id(self):
         for i, buf in enumerate(self._sched_layers):
@@ -81,22 +98,38 @@ class DeviceLayerScheduler:
         try:
             for i in range(self._num_layers):
                 # layer prefetch
-                for j in range(i + 1, self._num_layers):
-                    if (j not in self._fixed_layers) and (j not in self._active_layers):
+                for j in range(i, self._num_layers):
+                    if j not in self._fixed_layers:
+                        # need sched
+                        if j in self._active_layers:
+                            # already in buffer, just mark as used
+                            buf_id = self._active_layers[j]
+                            assert self._sched_layers[buf_id]["id"] == j
+                            self._sched_layers[buf_id]["unused"] = False
+                            continue
+
+                        # else not in buffer, get an unused buffer id
                         buf_id = self._get_unused_buffer_id()
                         if buf_id is None:
                             # no available buffer
                             break
+
+                        # remove old id from active layers and set new id
+                        del self._active_layers[self._sched_layers[buf_id]["id"]]
+                        self._sched_layers[buf_id]["id"] = j
+                        self._active_layers[j] = buf_id
+
                         with self._device:
                             with self._load_stream:
+                                # wait for calc stream
                                 torch.cuda.current_stream().wait_event(self._sched_layers[buf_id]["evt"])
+
                                 # copy to buffer async
-                                copy_layer(self._layers[j], self._sched_layers[buf_id]["layer"])
+                                transfer_layers(self._layers[j], self._sched_layers[buf_id]["parameters"])
 
                                 # event record after async load
                                 self._sched_layers[buf_id]["evt"].record(torch.cuda.current_stream())
                                 self._sched_layers[buf_id]["unused"] = False
-
 
                 if (i not in self._fixed_layers) and (i not in self._active_layers):
                     raise RuntimeError("Layer %d is not on device" % i)
@@ -107,11 +140,15 @@ class DeviceLayerScheduler:
                         buf_id = self._active_layers[i]
                         torch.cuda.current_stream().wait_event(self._sched_layers[buf_id]["evt"])
 
-                        yield self._sched_layers[buf_id]["layer"]
-                        
-                        # record event after calc
-                        self._sched_layers[buf_id]["evt"].record(torch.cuda.current_stream())
-                        self._sched_layers[buf_id]["unused"] = True
+                        # swap device parameters and cpu parameters
+                        swap_params(self._layers[i], self._sched_layers[buf_id]["parameters"])
+                        try:
+                            yield self._layers[i]
+                        finally:
+                            swap_params(self._layers[i], self._sched_layers[buf_id]["parameters"])
+                            # record event after calc
+                            self._sched_layers[buf_id]["evt"].record(torch.cuda.current_stream())
+                            self._sched_layers[buf_id]["unused"] = True
                     
         finally:
             with self._device:
