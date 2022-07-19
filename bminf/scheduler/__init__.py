@@ -1,6 +1,5 @@
-from re import L
 import torch
-from typing import List
+from typing import List, Optional
 from cpm_kernels.library import cudart
 
 def calc_fixed_layers(total_layers : int, max_fixed : int):
@@ -173,7 +172,7 @@ class OpDeviceLayer(torch.autograd.Function):
         return (None, grad_hidden_state, None) + tuple(grads)
 
 class DeviceLayerScheduler:
-    def __init__(self, layers : List[torch.nn.Module], device_id):
+    def __init__(self, layers : List[torch.nn.Module], device_id : int, memory_limit : Optional[int] = None):
         self._device = torch.cuda.device(device_id)
         self._num_layers = len(layers)
         
@@ -186,7 +185,10 @@ class DeviceLayerScheduler:
             with torch.no_grad():
                 self._load_stream = torch.cuda.stream(torch.cuda.Stream())
                 if self._num_layers > 0:
-                    free_mem = cudart.cudaMemGetInfo()[0]
+                    if memory_limit is None:
+                        free_mem = cudart.cudaMemGetInfo()[0]
+                    else:
+                        free_mem = memory_limit
 
                     total_size = 0
                     for param in layers[0].parameters():
