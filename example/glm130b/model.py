@@ -1,6 +1,5 @@
-import math
 import torch
-from .linear import Linear
+import math
 
 class GLMSelfAttention(torch.nn.Module):
     def __init__(
@@ -8,19 +7,17 @@ class GLMSelfAttention(torch.nn.Module):
             dim_model : int,
             num_heads : int,
             dim_head : int,
-            bias : bool,
-            dtype : torch.dtype,
         ) -> None:
         super().__init__()
 
         self.dim_head = dim_head
         self.num_heads = num_heads
 
-        self.weight_q = Linear(dim_model, num_heads * dim_head, bias=bias, dtype=dtype)
-        self.weight_k = Linear(dim_model, num_heads * dim_head, bias=bias, dtype=dtype)
-        self.weight_v = Linear(dim_model, num_heads * dim_head, bias=bias, dtype=dtype)
+        self.weight_q = torch.nn.Linear(dim_model, num_heads * dim_head, bias=True).half()
+        self.weight_k = torch.nn.Linear(dim_model, num_heads * dim_head, bias=True).half()
+        self.weight_v = torch.nn.Linear(dim_model, num_heads * dim_head, bias=True).half()
 
-        self.attn_out = Linear(dim_model, num_heads * dim_head, bias=bias, dtype=dtype)
+        self.attn_out = torch.nn.Linear(dim_model, num_heads * dim_head, bias=True).half()
 
         self.softmax = torch.nn.Softmax(dim=-1)
     
@@ -90,3 +87,81 @@ class GLMSelfAttention(torch.nn.Module):
             return torch.cat((-x2, x1), dim=x1.ndim - 1)
         
         return (hidden * v_cos[:, None, :, :]) + (rotate_half(hidden) * v_sin[:, None, :, :])
+
+class FeedForward(torch.nn.Module):
+    def __init__(
+            self,
+            dim_model : int,
+            dim_ff : int,
+        ) -> None:
+        super().__init__()
+
+        self.w_in = torch.nn.Linear(dim_model, dim_ff, bias=True).half()
+        self.w_out = torch.nn.Linear(dim_ff, dim_model, bias=True).half()
+        self.w_gate = torch.nn.Linear(dim_model, dim_ff, bias=True).half()
+        self.activation = torch.nn.GELU()
+
+    
+    def forward(self, x : torch.Tensor):
+        x_in = self.activation(self.w_in(x))
+        x_in = x_in * self.w_gate(x)
+        return self.w_out(x_in)
+
+
+class GLMBlock(torch.nn.Module):
+    def __init__(
+            self,
+            dim_model : int,
+            num_heads : int,
+            dim_head : int,
+            dim_ff : int,
+            alpha : float,
+            eps : float,
+        ) -> None:
+        super().__init__()
+
+        self.input_layernorm = torch.nn.LayerNorm(dim_model, eps=eps).half()
+        self.attention = GLMSelfAttention(dim_model, num_heads, dim_head)
+
+        self.post_attention_layernorm = torch.nn.LayerNorm(dim_model, eps=eps).half()
+        self.ff = FeedForward(dim_model, dim_ff)
+        self.alpha = alpha
+    
+    def forward(
+            self,
+            hidden_state : torch.Tensor,    # (batch, seq_len, dim_model)
+            mask : torch.BoolTensor,        # (batch, seq_len, seq_len)
+            position : torch.LongTensor
+        ):
+        attn_input = self.input_layernorm(hidden_state)
+        attn_output = self.attention(attn_input, mask, position)
+        hidden_state = attn_input * self.alpha + attn_output
+
+        mlp_input = self.post_attention_layernorm(hidden_state)
+        mlp_output = self.ff(mlp_input)
+
+        return mlp_input * self.alpha + mlp_output
+
+class GLM130B(torch.nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+
+        self.token_embedding = torch.nn.Embedding(150528, 12288).half()
+
+        self.layers = torch.nn.ModuleList([
+            GLMBlock(
+                12288,
+                96,
+                128,
+                32768,
+                (2 * 70) ** 0.5,
+                1e-5
+            )
+            for _ in range(2)
+        ])
+    
+    def forward(self, ids : torch.LongTensor, position : torch.LongTensor, mask : torch.BoolTensor):
+        hidden_state = self.token_embedding(ids)
+        for layer in self.layers:
+            hidden_state = layer(hidden_state, mask, position)
+        return hidden_state

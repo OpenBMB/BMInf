@@ -209,7 +209,7 @@ class DeviceLayerScheduler:
                         if i in self._fixed_layers:
                             self._layers.append( layers[i].cuda() )
                         else:
-                            self._layers.append( pin_layer(layers[i]) )
+                            self._layers.append( pin_layer(layers[i].cpu()) )
                     
                     for i in range(self._num_layers):
                         if len(self._sched_layers) >= sched_layers:
@@ -358,6 +358,9 @@ class TransformerBlockList(torch.nn.Module):
                     gpus[i]
                 )
             )
+    
+        for i, layer in enumerate(layers):
+            self.add_module("%d" % i, layer)
     
     def __getitem__(self, key):
         return self.layers[key]
