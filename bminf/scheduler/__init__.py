@@ -1,5 +1,5 @@
 import torch
-from typing import List, Optional
+from typing import List, Optional, Tuple, Union
 from cpm_kernels.library import cudart
 
 def calc_fixed_layers(total_layers : int, max_fixed : int):
@@ -74,7 +74,7 @@ class OpDeviceLayer(torch.autograd.Function):
                 self._look_ahead(range(i, len(self)))
                 if (i not in self._fixed_layers) and (i not in self._active_layers):
                     raise RuntimeError("Layer %d is not on device" % i)
-                with self._device:
+                with torch.cuda.device(self._device):
                     if i in self._fixed_layers:
                         hidden_state = self._layers[i](hidden_state, *args, **kwargs)
                     else:
@@ -140,7 +140,7 @@ class OpDeviceLayer(torch.autograd.Function):
 
                     if (i not in self._fixed_layers) and (i not in self._active_layers):
                         raise RuntimeError("Layer %d is not on device" % i)
-                    with self._device:
+                    with torch.cuda.device(self._device):
                         if i in self._fixed_layers:
                             output = self._layers[i](ipt, *args, **kwargs)
                         else:
@@ -173,7 +173,7 @@ class OpDeviceLayer(torch.autograd.Function):
 
 class DeviceLayerScheduler:
     def __init__(self, layers : List[torch.nn.Module], device_id : int, memory_limit : Optional[int] = None):
-        self._device = torch.cuda.device(device_id)
+        self._device = device_id
         self._num_layers = len(layers)
         
         self._fixed_layers = set()
@@ -181,9 +181,9 @@ class DeviceLayerScheduler:
         self._layers = []
         self._active_layers = {}
 
-        with self._device:
+        with torch.cuda.device(self._device):
             with torch.no_grad():
-                self._load_stream = torch.cuda.stream(torch.cuda.Stream())
+                self._load_stream = torch.cuda.Stream()
                 if self._num_layers > 0:
                     if memory_limit is None:
                         free_mem = cudart.cudaMemGetInfo()[0]
@@ -254,8 +254,8 @@ class DeviceLayerScheduler:
                 self._sched_layers[buf_id]["id"] = j
                 self._active_layers[j] = buf_id
 
-                with self._device:
-                    with self._load_stream:
+                with torch.cuda.device(self._device):
+                    with torch.cuda.stream(self._load_stream):
                         # wait for calc stream
                         torch.cuda.current_stream().wait_event(self._sched_layers[buf_id]["evt"])
 
@@ -275,7 +275,7 @@ class DeviceLayerScheduler:
 
                     if (i not in self._fixed_layers) and (i not in self._active_layers):
                         raise RuntimeError("Layer %d is not on device" % i)
-                    with self._device:
+                    with torch.cuda.device(self._device):
                         if i in self._fixed_layers:
                             yield self._layers[i]
                         else:
@@ -293,7 +293,7 @@ class DeviceLayerScheduler:
                                 self._sched_layers[buf_id]["unused"] = True
                         
             finally:
-                with self._device:
+                with torch.cuda.device(self._device):
                     # clear buffer
                     for buf in self._sched_layers:
                         buf["unused"] = True
@@ -304,7 +304,7 @@ class DeviceLayerScheduler:
         for k, v in kwargs.items():
             lst.append(k)
             lst.append(v)
-        with self._device: 
+        with torch.cuda.device(self._device): 
             x = x.cuda(non_blocking=True)
             cuda_lst = []
             for it in lst:
@@ -315,7 +315,7 @@ class DeviceLayerScheduler:
             return OpDeviceLayer.apply(self, x, len(kwargs), *cuda_lst)
 
 class TransformerBlockList(torch.nn.Module):
-    def __init__(self, layers : List[torch.nn.Module], gpus : List[int]):
+    def __init__(self, layers : List[torch.nn.Module], gpus : List[Union[int, Tuple[int, int]]]):
         super().__init__()
 
         self.layers = layers
@@ -352,10 +352,16 @@ class TransformerBlockList(torch.nn.Module):
         num_gpus = len(gpus)
         layers_per_gpu = (len(layers) + num_gpus - 1) // num_gpus   # round_up
         for i in range(num_gpus):
+            gpu_info = gpus[i]
+            if isinstance(gpu_info, tuple):
+                gpu_id, memory_limit = gpu_info
+            else:
+                gpu_id, memory_limit = gpu_info, None
             self._scheds.append(
                 DeviceLayerScheduler(
                     layers[i * layers_per_gpu: (i + 1) * layers_per_gpu],
-                    gpus[i]
+                    gpu_id,
+                    memory_limit
                 )
             )
     
