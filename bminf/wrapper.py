@@ -37,6 +37,19 @@ def _wrapper(model : torch.nn.Module, quantization, is_in_blocklist : bool, memo
     return model, found_linear
 
 def wrapper(model : torch.nn.Module, quantization : bool = True, memory_limit = None) -> torch.nn.Module:
+    """Enable the optimization of BMInf on your model.
+
+    This function automatically looks for the `nn.ModuleList` and `nn.Linear` layers in the model and replaces them.
+    
+    Args:
+        model (torch.nn.Module): your model.
+        quantization (bool): enable model quantization. (default: True)
+        memory_limit (int): memory limit in bytes. (default: free memory * 0.9)
+    
+    Example:
+        >>> with torch.cuda.device(gpu_id):
+        >>>     model = bminf.wrapper(model)
+    """
     if memory_limit is None:
         memory_limit = cudart.cudaMemGetInfo()[0] * 0.9
     model, found_linear = _wrapper(model, quantization, False, memory_limit)
