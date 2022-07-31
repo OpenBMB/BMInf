@@ -86,7 +86,7 @@ with torch.cuda.device(CUDA_DEVICE_INDEX):
 	model = bminf.wrapper(model)
 ```
 
-如果`bminf.wrapper`不能很好的适配你的模型，你可以用一下的方法来进行手动适配。
+如果`bminf.wrapper`不能很好的适配你的模型，你可以用以下的方法来进行手动适配。
 
 * 将 `torch.nn.ModuleList` 替换为 `bminf.TransformerBlockList`.
 ```python
