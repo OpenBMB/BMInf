@@ -23,7 +23,6 @@
 	</a>
 </p>    
 
-
 ## What's New
 - 2022/07/31 (**BMInf 2.0.0**) BMInf can now be applied to any transformer-based model.
 - 2021/12/21 (**BMInf 1.0.0**) Now the package no more depends on ``cupy`` and supports PyTorch backpropagation.
@@ -39,6 +38,18 @@
 BMInf (Big Model Inference) is a low-resource inference package for large-scale pretrained language models (PLMs). 
 
 BMInf supports running models with more than 10 billion parameters on a single NVIDIA GTX 1060 GPU in its minimum requirements. Running with better GPUs leads to better performance. In cases where the GPU memory supports the large model inference (such as V100 or A100), BMInf still has a significant performance improvement over the existing PyTorch implementation.
+
+If you use the code, please cite the following [paper](https://aclanthology.org/2022.acl-demo.22.pdf):
+
+```
+@inproceedings{han2022bminf,
+	title={BMInf: An Efficient Toolkit for Big Model Inference and Tuning},
+	author={Han, Xu and Zeng, Guoyang and Zhao, Weilin and Liu, Zhiyuan and Zhang, Zhengyan and Zhou, Jie and Zhang, Jun and Chao, Jia and Sun, Maosong},
+	booktitle={Proceedings of the 60th Annual Meeting of the Association for Computational Linguistics: System Demonstrations},
+	pages={224--230},
+	year={2022}
+}
+```
 
 <div id="install"></div>
 
