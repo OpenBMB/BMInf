@@ -57,7 +57,7 @@ Our [documentation](https://bminf.readthedocs.io/en/latest/) provides more infor
 
 ## Installation
 
-- From pip: ``pip install bminf``
+- From pip: ``pip install bminf==1.0.2``
 
 - From source code: download the package and run ``python setup.py install``
 

@@ -57,7 +57,7 @@ BMInf (Big Model Inference) 是一个用于大规模预训练语言模型（pret
 
 ## 安装
 
-- 用pip安装：``pip install bminf``
+- 用pip安装：``pip install bminf==1.0.2``
 
 - 从源代码安装: 下载工具包并在目录中运行 ``python setup.py install``
 
