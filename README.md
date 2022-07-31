@@ -87,7 +87,7 @@ model.load_state_dict(model_checkpoint)
 
 # apply wrapper
 with torch.cuda.device(CUDA_DEVICE_INDEX):
-	model = bminf.wrapper(model)
+    model = bminf.wrapper(model)
 ```
 
 If `bminf.wrapper` does not fit your model well, you can use the following method to replace it manually.
