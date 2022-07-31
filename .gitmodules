@@ -1,0 +1,3 @@
+[submodule "3rdparty/FasterTransformer"]
+	path = 3rdparty/FasterTransformer
+	url = https://github.com/prnake/FasterTransformer

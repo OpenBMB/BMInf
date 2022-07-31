@@ -1,13 +1,13 @@
 <div align="center">
 
-<h1><img src="docs/_static/logo.png" height="28px" /> BMInf</h1>
+<h1><img src="logo.png" height="28px" /> BMInf </h1>
 
 **Efficient Inference for Big Models**
 
 </div>
 
 <p align="center">
-  <a href="#overview">Overview</a> • <a href="#demo">Demo</a> • <a href="#documentation">Documentation</a> • <a href="#install">Installation</a> • <a href="#quick-start">Quick Start</a> • <a href="#supported-models">Supported Models</a> • <a href="./README-ZH.md" target="_blank">简体中文</a>
+  <a href="#overview">Overview</a> • <a href="#install">Installation</a> • <a href="#quick-start">Quick Start</a> • <a href="./README-ZH.md" target="_blank">简体中文</a>
 <br>
 </p>
 
@@ -24,22 +24,20 @@
 </p>    
 
 ## What's New
+- 2022/07/31 (**BMInf 2.0.0**) BMInf can now be applied to any transformer-based model.
 - 2021/12/21 (**BMInf 1.0.0**) Now the package no more depends on ``cupy`` and supports PyTorch backpropagation.
 - 2021/10/18 We updated the ``generate`` interface and added a new CPM 2.1 demo.
 - 2021/09/24 We publicly released BMInf on the 2021 Zhongguancun Forum (AI and Multidisciplinary Synergy Innovation Forum).
+
+**Note:** README for `BMInf-1` can be found in `old_docs` directory. Examples of CPM-1/2 and EVA will be published soon.
 
 <div id="overview"></div>
 
 ## Overview
 
-BMInf (Big Model Inference) is a low-resource inference package for large-scale pretrained language models (PLMs). It has following features:
-<div id="features"></div>
+BMInf (Big Model Inference) is a low-resource inference package for large-scale pretrained language models (PLMs). 
 
-- **Hardware Friendly.** BMInf supports running models with more than 10 billion parameters on a single NVIDIA GTX 1060 GPU in its minimum requirements. Running with better GPUs leads to better performance. In cases where the GPU memory supports the large model inference (such as V100 or A100), BMInf still has a significant performance improvement over the existing PyTorch implementation.
-- **Open.** The parameters of models are open. Users can access large models locally with their own machines without applying or accessing an online API.  
-- **Comprehensive Ability.**  BMInf supports generative model CPM1 [[1](#ref)], general language model CPM2.1 [[2](#ref)], and dialogue model EVA [[3](#ref)]. The abilities of these models cover text completion, text generation, and dialogue generation.
-- **Upgraded Model.** Based on CPM2 [[2](#ref)], the newly upgraded model CPM2.1 is currently supported. Based on continual learning, the text generation ability of CPM2.1 is greatly improved compared to CPM2.
-- **Convenient Deployment.** Using BMInf, it will be fast and convenient to develop interesting downstream applications.
+BMInf supports running models with more than 10 billion parameters on a single NVIDIA GTX 1060 GPU in its minimum requirements. Running with better GPUs leads to better performance. In cases where the GPU memory supports the large model inference (such as V100 or A100), BMInf still has a significant performance improvement over the existing PyTorch implementation.
 
 If you use the code, please cite the following [paper](https://aclanthology.org/2022.acl-demo.22.pdf):
 
@@ -53,16 +51,6 @@ If you use the code, please cite the following [paper](https://aclanthology.org/
 }
 ```
 
-## Demo
-![demo](./docs/source/images/demo.gif)
-
-For more demos, please refer to [BMInf-demos](https://github.com/OpenBMB/BMInf-demos).
-
-<div id="documentation"></div>
-
-## Documentation
-Our [documentation](https://bminf.readthedocs.io/en/latest/) provides more information about the package.
-
 <div id="install"></div>
 
 ## Installation
@@ -71,7 +59,6 @@ Our [documentation](https://bminf.readthedocs.io/en/latest/) provides more infor
 
 - From source code: download the package and run ``python setup.py install``
 
-- From docker: ``docker run -it --gpus 1 -v $HOME/.cache/bigmodels:/root/.cache/bigmodels --rm openbmb/bminf python3 examples/fill_blank.py``
 
 ### Hardware Requirement
 
@@ -91,60 +78,42 @@ capability 6.1 or higher are supported by BMInf. Refer to the [table](https://en
 BMInf requires CUDA version >= 10.1 and all the dependencies can be automaticlly installed by the installation process.
 
 - **python** >= 3.6
-- **requests**
-- **tqdm** 
-- **jieba**
-- **numpy** 
+- **torch** >= 1.7.1
 - **cpm_kernels** >= 1.0.9
-
-If you want to use the backpropagation function with PyTorch, make sure `torch` is installed on your device.
 
 <div id="quick-start"></div>
 
 ## Quick Start
 
-Here we provide a simple script for using BMInf. 
+Use `bminf.wrapper` to automatically convert your model.
 
-Firstly, import a model from the model base (e.g. CPM1, CPM2, EVA).
 ```python
 import bminf
-cpm2 = bminf.models.CPM2()
+
+# initialize your model on CPU
+model = MyModel()
+
+# load state_dict before using wrapper
+model.load_state_dict(model_checkpoint)
+
+# apply wrapper
+with torch.cuda.device(CUDA_DEVICE_INDEX):
+    model = bminf.wrapper(model)
 ```
 
-Then define the text and use the ``<span>`` token to denote the blank to fill in.
+If `bminf.wrapper` does not fit your model well, you can use the following method to replace it manually.
+
+* Replace `torch.nn.ModuleList` with `bminf.TransformerBlockList`.
 ```python
-text = "北京环球度假区相关负责人介绍，北京环球影城指定单日门票将采用<span>制度，即推出淡季日、平季日、旺季日和特定日门票。<span>价格为418元，<span>价格为528元，<span>价格为638元，<span>价格为<span>元。北京环球度假区将提供90天滚动价格日历，以方便游客提前规划行程。"
+module_list = bminf.TransformerBlockList([
+	# ...
+], [CUDA_DEVICE_INDEX])
 ```
 
-Use the ``fill_blank`` function to obtain the results and replace ``<span>`` tokens with the results.
-
+* Replace `torch.nn.Linear` with `bminf.QuantizedLinear`.
 ```python
-for result in cpm2.fill_blank(text, 
-    top_p=1.0,
-    top_n=5, 
-    temperature=0.5,
-    frequency_penalty=0,
-    presence_penalty=0
-):
-    value = result["text"]
-    text = text.replace("<span>", "\033[0;32m" + value + "\033[0m", 1)
-print(text)
+linear = bminf.QuantizedLinear(torch.nn.Linear(...))
 ```
-Finally, you can get the predicted text. For more examples, go to the ``examples`` folder.
-
-<div id="supported-models"></div>
-
-## Supported Models
-
-BMInf currently supports these models:
-
-- **CPM2.1.** CPM2.1 is an upgraded version of CPM2 [[1](#ref)], which is a general Chinese pre-trained language model with 11 billion parameters. Based on CPM2, CPM2.1 introduces a generative pre-training task and was trained via the continual learning paradigm. In experiments, CPM2.1 has a better generation ability than CPM2.
-
-- **CPM1.** CPM1 [[2](#ref)] is a generative Chinese pre-trained language model with 2.6 billion parameters. The architecture of CPM1 is similar to GPT [[4](#ref)] and it can be used in various NLP tasks such as conversation, essay generation, cloze test, and language understanding.
-
-- **EVA.** EVA [[3](#ref)] is a Chinese pre-trained dialogue model with 2.8 billion parameters. EVA performs well on many dialogue tasks, especially in the multi-turn interaction of human-bot conversations.
-
-Besides these models, we are now working on adding more PLMs especially large-scale PLMs. We welcome every contributor to add their models to this project by proposing an issue.
 
 ## Performances
 

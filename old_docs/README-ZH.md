@@ -1,13 +1,13 @@
 <div align="center">
 
-<h1><img src="logo.png" height="28px" /> BMInf </h1>
+<h1><img src="/logo.png" height="28px" /> </h1>
 
 **大模型高效推理工具包**
 
 </div>
 
 <p align="center">
-  <a href="#overview">总览</a> • <a href="#install">安装</a> • <a href="#quick-start">快速上手</a> • <a href="./README.md" target="_blank">English</a>
+  <a href="#overview">总览</a> • <a href="#demo">Demo</a> • <a href="#documentation">文档</a> • <a href="#install">安装</a> • <a href="#quick-start">快速上手</a> • <a href="#supported-models">支持模型</a> • <a href="./README.md" target="_blank">English</a>
 <br>
 </p>
 
@@ -25,7 +25,6 @@
 
 
 ## 最新动态
-- 2022/07/31 (**BMInf 2.0.0**) BMInf现在支持任意transformer类型的模型了。
 - 2021/12/21 (**BMInf 1.0.0**) 现在工具包不再依赖``cupy``，新增了对于PyTorch反向传播的支持。
 - 2021/10/18 更新了``generate``接口并且增加了一个CPM 2.1的新demo。
 - 2021/09/24 BMInf于2021年中关村论坛-人工智能与多学科协同论坛正式发布了！
@@ -35,16 +34,34 @@
 ## 总览
 
 BMInf (Big Model Inference) 是一个用于大规模预训练语言模型（pretrained language models, PLM）推理阶段的低资源工具包。
+<div id="features"></div>
 
-BMInf最低支持在NVIDIA GTX 1060单卡运行百亿大模型。在此基础上，使用更好的gpu运行会有更好的性能。在显存支持进行大模型推理的情况下（如V100或A100显卡），BMInf的实现较现有PyTorch版本仍有较大性能提升。
+- **硬件友好** BMInf最低支持在NVIDIA GTX 1060单卡运行百亿大模型。在此基础上，使用更好的gpu运行会有更好的性能。在显存支持进行大模型推理的情况下（如V100或A100显卡），BMInf的实现较现有PyTorch版本仍有较大性能提升。
+- **开源共享** 模型参数开源共享，用户在本地即可部署运行，无需访问或申请API。
+- **能力全面** 支持生成模型CPM1 [[1](#ref)]、通用模型CPM2 [[2](#ref)]、对话模型EVA [[3](#ref)]，模型能力覆盖文本补全、文本生成与对话场景。
+- **模型升级** 基于持续学习推出百亿模型新升级CPM2.1 [[2](#ref)]，文本生成能力大幅提高。
+- **应用便捷** 基于工具包可以快速开发大模型相关下游应用。
+
+
+## Demo
+![demo](./docs/source/images/demo.gif)
+
+访问[BMInf-demos](https://github.com/OpenBMB/BMInf-demos)查看更多Demo。
+
+<div id="documentation"></div>
+
+## 文档
+我们的[文档](https://bminf.readthedocs.io/zh_CN/latest/)提供了关于该工具包的更多信息。
 
 <div id="install"></div>
 
 ## 安装
 
-- 用pip安装：``pip install bminf``
+- 用pip安装：``pip install bminf==1.0.2``
 
 - 从源代码安装: 下载工具包并在目录中运行 ``python setup.py install``
+
+- 从Docker安装: ``docker run -it --gpus 1 -v $HOME/.cache/bigmodels:/root/.cache/bigmodels --rm openbmb/bminf python3 examples/fill_blank.py``
 
 ### 硬件要求
 
@@ -63,44 +80,58 @@ BMInf支持计算能力6.1或更高的GPU，查看[对照表](https://en.wikiped
 BMInf需要安装CUDA 10.1及以上版本，所有的依赖包都会在安装过程中自动被安装。
 
 - **python** >= 3.6
-- **torch** >= 1.7.1
+- **requests**
+- **tqdm** 
+- **jieba**
+- **numpy** 
 - **cpm_kernels** >= 1.0.9
+
+如果你想使用基于PyTorch的反向传播功能，确保在使用前安装了`torch`。
 
 <div id="quick-start"></div>
 
 ## 快速上手
 
-使用`bminf.wrapper`来自动的转换你的模型。
+这里我们给出了一个使用BMInf的简单脚本。
 
+首先，从模型库中导入一个想要使用的模型（如CPM1，CPM2或EVA）。
 ```python
 import bminf
-
-# 在CPU上初始化你的模型
-model = MyModel()
-
-# 加载模型参数
-model.load_state_dict(model_checkpoint)
-
-# 使用bminf.wrapper
-with torch.cuda.device(CUDA_DEVICE_INDEX):
-    model = bminf.wrapper(model)
+cpm2 = bminf.models.CPM2()
 ```
 
-如果`bminf.wrapper`不能很好的适配你的模型，你可以用以下的方法来进行手动适配。
-
-* 将 `torch.nn.ModuleList` 替换为 `bminf.TransformerBlockList`.
+定义输入文本，使用``<span>``标签来表示需要填入文本的位置。
 ```python
-module_list = bminf.TransformerBlockList([
-	# ...
-], [CUDA_DEVICE_INDEX])
+text = "北京环球度假区相关负责人介绍，北京环球影城指定单日门票将采用<span>制度，即推出淡季日、平季日、旺季日和特定日门票。<span>价格为418元，<span>价格为528元，<span>价格为638元，<span>价格为<span>元。北京环球度假区将提供90天滚动价格日历，以方便游客提前规划行程。"
 ```
 
-* 将 `torch.nn.Linear` 替换为 `bminf.QuantizedLinear`.
+使用``fill_blank``函数获取结果，将文本中的``<span>``标签替换为得到的结果。
+
 ```python
-linear = bminf.QuantizedLinear(torch.nn.Linear(...))
+for result in cpm2.fill_blank(text, 
+    top_p=1.0,
+    top_n=5, 
+    temperature=0.5,
+    frequency_penalty=0,
+    presence_penalty=0
+):
+    value = result["text"]
+    text = text.replace("<span>", "\033[0;32m" + value + "\033[0m", 1)
+print(text)
 ```
+最终我们就得到了预测文本。更多的使用脚本详见``examples``文件夹。
 
 <div id="supported-models"></div>
+
+## 支持模型
+
+BMInf目前支持下列模型：
+
+- **CPM2.1**. CPM2.1是CPM2 [[1](#ref)] 的升级版本。CPM2是一个拥有110亿参数的通用中文预训练语言模型。基于CPM2，CPM2.1新增了一个生成式的预训练任务并基于持续学习范式进行训练。实验结果证明CPM2.1比CPM2具有更好的生成能力。
+- **CPM1.** CPM1 [[2](#ref)] 是一个拥有26亿参数的生成式中文预训练语言模型。CPM1的模型架构与GPT [[4](#ref)] 类似，它能够被应用于广泛的自然语言处理任务，如对话、文章生成、完形填空和语言理解。
+- **EVA.** EVA [[3](#ref)]是一个有着28亿参数的中文预训练对话模型。EVA在很多对话任务上表现优异，尤其是在多轮人机交互对话任务上。
+
+除了这些模型，我们目前致力于导入更多的预训练语言模型，尤其是大规模预训练语言模型。我们欢迎每一位贡献者通过提交issue来添加他们的模型。
 
 ## 运行性能
 

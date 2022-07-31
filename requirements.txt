@@ -1,5 +1,2 @@
-requests
-tqdm
-jieba
-numpy
+torch
 cpm_kernels>=1.0.9

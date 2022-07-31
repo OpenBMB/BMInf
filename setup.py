@@ -66,6 +66,10 @@ def main():
         python_requires=">=3.6",
         setup_requires=["wheel"],
         install_requires= requires,
+        include_package_data=True,
+        package_data={
+            'bminf.kernels': ['*.fatbin']
+        }
     )
 
 if __name__ == "__main__":
