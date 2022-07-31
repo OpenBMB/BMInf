@@ -1,6 +1,6 @@
 <div align="center">
 
-<h1><img src="docs/_static/logo.png" height="28px" /> </h1>
+<h1><img src="logo.png" height="28px" /> BMInf </h1>
 
 **大模型高效推理工具包**
 

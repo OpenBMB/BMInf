@@ -1,6 +1,6 @@
 <div align="center">
 
-<h1><img src="docs/_static/logo.png" height="28px" /> BMInf</h1>
+<h1><img src="/logo.png" height="28px" /> BMInf</h1>
 
 **Efficient Inference for Big Models**
 
