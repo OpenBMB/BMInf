@@ -1,12 +1,24 @@
 import torch
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union, Dict, Set
 from cpm_kernels.library import cudart
+from typing_extensions import TypedDict
 
-def calc_fixed_layers(total_layers : int, max_fixed : int):
+class ParameterInfo(TypedDict):
+    shape : torch.Size
+    dtype : torch.dtype
+
+
+class SchedLayerInfo(TypedDict):
+    parameters : Dict[str, torch.Tensor]
+    evt : torch.cuda.Event
+    unused : bool
+    id : int
+
+def calc_fixed_layers(total_layers : int, max_fixed : int) -> List[int]:
     max_fixed = min(max_fixed, total_layers)
     scheduled_layers = total_layers - max_fixed
     vals = [(i + 1) * scheduled_layers // total_layers for i in range(total_layers)]
-    ret = []
+    ret : List[int] = []
     last_v = 0
     for i, v in enumerate(vals):
         if v == last_v:
@@ -19,16 +31,23 @@ def pin_layer(m : torch.nn.Module):
     for param in m.parameters():
         with torch.no_grad():
             param.data = param.data.pin_memory()
+    for buf in m.buffers():
+        with torch.no_grad():
+            buf.data = buf.data.pin_memory()
     return m
 
-def transfer_layers(m_src : torch.nn.Module, m_dst : dict):
+def transfer_layers(m_src : torch.nn.Module, m_dst : Dict[str, torch.Tensor]):
     with torch.no_grad():
         for name, param in m_src.named_parameters():
             assert name in m_dst
             # copy to device buffer
             m_dst[name].copy_(param, non_blocking=True)
+        for name, buf in m_src.named_buffers():
+            assert name in m_dst
+            m_dst[name].copy_(buf, non_blocking=True)
+        
 
-def swap_params(m_src : torch.nn.Module, m_dst : dict):
+def swap_params(m_src : torch.nn.Module, m_dst : Dict[str, torch.Tensor]):
     with torch.no_grad():
         for name, param in m_src.named_parameters():
             assert name in m_dst
@@ -37,6 +56,13 @@ def swap_params(m_src : torch.nn.Module, m_dst : dict):
             tmp = m_dst[name].data
             m_dst[name].data = param.data
             param.data = tmp
+        for name, buf in m_src.named_buffers():
+            assert name in m_dst
+
+            # swap memory info
+            tmp = m_dst[name].data
+            m_dst[name].data = buf.data
+            buf.data = tmp
 
 class OpDeviceLayer(torch.autograd.Function):
     @staticmethod
@@ -176,8 +202,8 @@ class DeviceLayerScheduler:
         self._device = device_id
         self._num_layers = len(layers)
         
-        self._fixed_layers = set()
-        self._sched_layers = []
+        self._fixed_layers : Set[int] = set()
+        self._sched_layers : List[SchedLayerInfo] = []
         self._layers = []
         self._active_layers = {}
 
@@ -193,6 +219,8 @@ class DeviceLayerScheduler:
                     total_size = 0
                     for param in layers[0].parameters():
                         total_size += param.numel() * param.storage().element_size()
+                    for buf in layers[0].buffers():
+                        total_size += buf.numel() * buf.storage().element_size()
                     
                     total_layers = free_mem // total_size
                     if total_layers < 2:
@@ -217,7 +245,12 @@ class DeviceLayerScheduler:
                         if i not in self._fixed_layers:
                             self._active_layers[i] = len(self._sched_layers)
                             self._sched_layers.append({
-                                "parameters": { name: param.cuda() for name, param in layers[i].named_parameters()},
+                                "parameters": {
+                                    name: param.cuda() for name, param in (
+                                        list(layers[i].named_parameters())
+                                        + list(layers[i].named_buffers())
+                                    )
+                                },
                                 "evt": torch.cuda.Event(),
                                 "id": i,
                                 "unused": True
@@ -375,6 +408,9 @@ class TransformerBlockList(torch.nn.Module):
         for sched in self._scheds:
             for layer in sched:
                 yield layer
+    
+    def __len__(self):
+        return len(self.layers)
 
     def forward(self, x, *args, **kwargs):
         for sched in self._scheds:

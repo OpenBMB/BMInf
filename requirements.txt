@@ -1,2 +1,3 @@
 torch
 cpm_kernels>=1.0.9
+typing_extensions
